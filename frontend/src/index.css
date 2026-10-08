@@ -1,0 +1,277 @@
+/* Global Design System & Variables */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  --bg-color: #f8fafc;
+  --card-bg: #ffffff;
+  --card-border: #e2e8f0;
+  --text-main: #334155;
+  --text-muted: #64748b;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --success: #10b981;
+  --danger: #ef4444;
+  --danger-hover: #dc2626;
+  --input-bg: #f8fafc;
+  --input-border: #cbd5e1;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: #f8fafc;
+  background-image: 
+    linear-gradient(#e2e8f0 1px, transparent 1px), 
+    linear-gradient(90deg, #e2e8f0 1px, transparent 1px);
+  background-size: 30px 30px;
+  color: var(--text-main);
+  min-height: 100vh;
+  padding: 2.5rem 1rem;
+  line-height: 1.6;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* Header Styles */
+.header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+  padding: 2rem;
+  background-color: var(--card-bg);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--card-border);
+}
+
+.header h1 {
+  font-size: 2.25rem;
+  color: #0f172a;
+  margin-bottom: 0.5rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.header p {
+  color: var(--text-muted);
+  font-size: 1.05rem;
+}
+
+.badge-lab {
+  display: inline-block;
+  background: #eff6ff;
+  color: #1e40af;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* App Grid Layout */
+.app-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 2rem;
+}
+
+@media (max-width: 868px) {
+  .app-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Standard Card */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 1.75rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.card-title {
+  font-size: 1.25rem;
+  color: #0f172a;
+  margin-bottom: 1.5rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--card-border);
+  padding-bottom: 0.75rem;
+}
+
+/* Alerts and Messages */
+.alert {
+  padding: 0.875rem 1rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  margin-bottom: 1.25rem;
+  font-weight: 500;
+}
+
+.alert-success {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.alert-error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+/* Form Styling */
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-group label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 0.4rem;
+  color: #475569;
+}
+
+.form-control {
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  background-color: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  background-color: #ffffff;
+}
+
+.btn {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-primary {
+  background-color: var(--primary);
+  color: white;
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-hover);
+  transform: translateY(-1px);
+}
+
+.btn-danger {
+  background-color: #fee2e2;
+  color: #ef4444;
+  border: 1px solid #fecaca;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  width: auto;
+}
+
+.btn-danger:hover {
+  background-color: var(--danger);
+  color: white;
+}
+
+/* Inventory Table */
+.table-container {
+  overflow-x: auto;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+}
+
+.inventory-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.inventory-table th {
+  background: #f8fafc;
+  color: #475569;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--card-border);
+  text-align: left;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+.inventory-table td {
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--card-border);
+  vertical-align: middle;
+}
+
+.inventory-table tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+.inventory-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-muted);
+}
+
+/* Badges for Categories */
+.badge-category {
+  padding: 0.25rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-material {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.badge-equipment {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.badge-tool {
+  background: #f3e8ff;
+  color: #7e22ce;
+}
+
+.badge-other {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+

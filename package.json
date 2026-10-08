@@ -1,0 +1,10 @@
+{
+  "name": "mern-student-registration",
+  "version": "1.0.0",
+  "description": "Basic MERN Stack Student Registration System for Lab & Exam",
+  "scripts": {
+    "start:backend": "cd backend && npm start",
+    "start:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev"
+  }
+}
