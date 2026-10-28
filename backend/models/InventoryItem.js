@@ -28,12 +28,43 @@ const inventoryItemSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Supplier name is required'],
       trim: true
+    },
+    site: {
+      type: String,
+      trim: true,
+      default: 'General Site'
+    },
+    minThreshold: {
+      type: Number,
+      default: 10,
+      min: [0, 'Minimum threshold cannot be negative']
+    },
+    unitCost: {
+      type: Number,
+      default: 0,
+      min: [0, 'Unit cost cannot be negative']
+    },
+    sku: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    project: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Project',
+      default: null
+    },
+    storageLocation: {
+      type: String,
+      trim: true,
+      default: ''
     }
   },
   {
     timestamps: true // Automatically adds createdAt and updatedAt fields
   }
 );
+
 
 // STEP 2: Create and export the Model from Schema
 // The model provides methods like find(), save(), findByIdAndDelete(), etc.

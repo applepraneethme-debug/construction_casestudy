@@ -1,0 +1,271 @@
+const express = require('express');
+const mongoose = require('mongoose');
+const Requisition = require('../models/Requisition');
+const InventoryItem = require('../models/InventoryItem');
+const StockMovement = require('../models/StockMovement');
+const { authenticate, requirePermission, verifyCsrf } = require('../middleware/authMiddleware');
+const { PERMISSIONS } = require('../config/permissions');
+
+const router = express.Router();
+
+router.use(authenticate);
+router.use(verifyCsrf);
+
+/**
+ * 1. GET /api/requisitions - View requisitions with role/site scoping
+ */
+router.get('/', async (req, res) => {
+  try {
+    const filter = {};
+
+    if (req.user.role !== 'Owner') {
+      const assigned = req.user.assignedSites || [];
+      filter.$or = [
+        { site: { $in: assigned } },
+        { site: 'General Site' }
+      ];
+    }
+
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
+    if (req.query.site) {
+      filter.site = req.query.site;
+    }
+
+    const requisitions = await Requisition.find(filter)
+      .populate('project', 'name code')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json(requisitions);
+  } catch (error) {
+    res.status(500).json({ message: 'Error retrieving requisitions: ' + error.message });
+  }
+});
+
+/**
+ * 2. POST /api/requisitions - Site Engineer creates material requisition
+ */
+router.post('/', requirePermission(PERMISSIONS.REQUISITIONS_CREATE), async (req, res) => {
+  try {
+    const { project, site, activity, priority, items, notes } = req.body;
+
+    if (!site || !activity || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        message: 'Site, activity description, and at least one material item are required.'
+      });
+    }
+
+    // Site permission check
+    if (req.user.role !== 'Owner' && site !== 'General Site' && !(req.user.assignedSites || []).includes(site)) {
+      return res.status(403).json({ message: `Forbidden: No access to create requisition for site '${site}'` });
+    }
+
+    // Validate items
+    const parsedItems = [];
+    for (const item of items) {
+      if (!item.material || !item.quantityRequested || Number(item.quantityRequested) <= 0) {
+        return res.status(400).json({ message: 'Each item must have a valid material and positive quantity.' });
+      }
+
+      const inv = await InventoryItem.findById(item.material);
+      if (!inv) {
+        return res.status(404).json({ message: `Material with ID ${item.material} not found.` });
+      }
+
+      parsedItems.push({
+        material: inv._id,
+        materialName: inv.itemName,
+        quantityRequested: Number(item.quantityRequested),
+        quantityIssued: 0,
+        unit: inv.unit
+      });
+    }
+
+    // Generate unique requisition number
+    const count = await Requisition.countDocuments();
+    const reqNum = `REQ-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
+
+    const requisition = new Requisition({
+      requisitionNumber: reqNum,
+      project: project && mongoose.Types.ObjectId.isValid(project) ? project : null,
+      site: site.trim(),
+      activity: activity.trim(),
+      priority: priority || 'Medium',
+      items: parsedItems,
+      status: 'Pending',
+      requestedBy: req.user._id,
+      requestedByName: req.user.name,
+      requestedByRole: req.user.role,
+      notes: notes ? notes.trim() : ''
+    });
+
+    const saved = await requisition.save();
+    res.status(201).json({ message: `Requisition ${reqNum} created successfully!`, requisition: saved });
+  } catch (error) {
+    res.status(500).json({ message: 'Error creating requisition: ' + error.message });
+  }
+});
+
+/**
+ * 3. PATCH /api/requisitions/:id/approve - Approve requisition (Material Manager / Owner)
+ */
+router.patch('/:id/approve', requirePermission(PERMISSIONS.REQUISITIONS_APPROVE), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const requisition = await Requisition.findById(id);
+
+    if (!requisition) {
+      return res.status(404).json({ message: 'Requisition not found.' });
+    }
+
+    if (requisition.status !== 'Pending') {
+      return res.status(400).json({ message: `Cannot approve requisition in status '${requisition.status}'.` });
+    }
+
+    // Separation of duties: Cannot approve your own requisition (unless Owner)
+    if (req.user.role !== 'Owner' && requisition.requestedBy.toString() === req.user._id.toString()) {
+      return res.status(403).json({
+        message: 'Separation of duties violation: You cannot approve your own material requisition.'
+      });
+    }
+
+    // Site permission check
+    if (req.user.role !== 'Owner' && requisition.site !== 'General Site' && !(req.user.assignedSites || []).includes(requisition.site)) {
+      return res.status(403).json({ message: `Forbidden: No access to approve requisitions for site '${requisition.site}'` });
+    }
+
+    requisition.status = 'Approved';
+    requisition.approvedBy = req.user._id;
+    requisition.approvedByName = req.user.name;
+    requisition.approvalDate = new Date();
+    await requisition.save();
+
+    res.status(200).json({ message: `Requisition ${requisition.requisitionNumber} approved!`, requisition });
+  } catch (error) {
+    res.status(500).json({ message: 'Error approving requisition: ' + error.message });
+  }
+});
+
+/**
+ * 4. PATCH /api/requisitions/:id/reject - Reject requisition with reason
+ */
+router.patch('/:id/reject', requirePermission(PERMISSIONS.REQUISITIONS_APPROVE), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ message: 'Rejection reason is required.' });
+    }
+
+    const requisition = await Requisition.findById(id);
+    if (!requisition) {
+      return res.status(404).json({ message: 'Requisition not found.' });
+    }
+
+    if (requisition.status !== 'Pending') {
+      return res.status(400).json({ message: `Cannot reject requisition in status '${requisition.status}'.` });
+    }
+
+    // Site permission check
+    if (req.user.role !== 'Owner' && requisition.site !== 'General Site' && !(req.user.assignedSites || []).includes(requisition.site)) {
+      return res.status(403).json({ message: `Forbidden: No access to reject requisitions for site '${requisition.site}'` });
+    }
+
+    requisition.status = 'Rejected';
+    requisition.approvedBy = req.user._id;
+    requisition.approvedByName = req.user.name;
+    requisition.approvalDate = new Date();
+    requisition.rejectionReason = reason.trim();
+    await requisition.save();
+
+    res.status(200).json({ message: `Requisition ${requisition.requisitionNumber} rejected.`, requisition });
+  } catch (error) {
+    res.status(500).json({ message: 'Error rejecting requisition: ' + error.message });
+  }
+});
+
+/**
+ * 5. POST /api/requisitions/:id/fulfill - Issue stock against approved requisition (Storekeeper / Manager)
+ * Guarantees atomic fulfillment and prevents duplicate issuance.
+ */
+router.post('/:id/fulfill', requirePermission(PERMISSIONS.INVENTORY_ISSUE), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const requisition = await Requisition.findById(id);
+
+    if (!requisition) {
+      return res.status(404).json({ message: 'Requisition not found.' });
+    }
+
+    if (requisition.status === 'Fulfilled') {
+      return res.status(400).json({ message: 'This requisition has already been fulfilled and issued.' });
+    }
+
+    if (requisition.status !== 'Approved') {
+      return res.status(400).json({
+        message: `Requisition must be approved before materials can be issued. Current status: '${requisition.status}'`
+      });
+    }
+
+    // Site permission check
+    if (req.user.role !== 'Owner' && requisition.site !== 'General Site' && !(req.user.assignedSites || []).includes(requisition.site)) {
+      return res.status(403).json({ message: `Forbidden: No access to fulfill requisitions for site '${requisition.site}'` });
+    }
+
+    // Verify stock availability for all items first
+    for (const item of requisition.items) {
+      const inv = await InventoryItem.findById(item.material);
+      if (!inv || inv.quantity < item.quantityRequested) {
+        return res.status(400).json({
+          message: `Cannot fulfill: Insufficient stock for ${item.materialName}. Available: ${inv ? inv.quantity : 0}, Required: ${item.quantityRequested}`
+        });
+      }
+    }
+
+    // Atomically decrement stock and record stock movements
+    for (const item of requisition.items) {
+      const updated = await InventoryItem.findOneAndUpdate(
+        { _id: item.material, quantity: { $gte: item.quantityRequested } },
+        { $inc: { quantity: -item.quantityRequested } },
+        { new: true }
+      );
+
+      item.quantityIssued = item.quantityRequested;
+
+      // Log movement to ledger
+      const movement = new StockMovement({
+        material: updated._id,
+        materialName: updated.itemName,
+        site: updated.site || requisition.site,
+        project: requisition.project || null,
+        movementType: 'issue',
+        quantity: item.quantityRequested,
+        unit: item.unit,
+        unitCost: updated.unitCost,
+        totalValue: Number((item.quantityRequested * updated.unitCost).toFixed(2)),
+        reference: requisition.requisitionNumber,
+        reason: `Requisition Fulfillment for activity: ${requisition.activity}`,
+        recordedBy: req.user._id,
+        recordedByName: req.user.name,
+        recordedByRole: req.user.role,
+        status: 'completed'
+      });
+      await movement.save();
+    }
+
+    requisition.status = 'Fulfilled';
+    requisition.fulfilledDate = new Date();
+    await requisition.save();
+
+    res.status(200).json({
+      message: `Requisition ${requisition.requisitionNumber} fulfilled successfully! Stock deducted and ledger updated.`,
+      requisition
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fulfilling requisition: ' + error.message });
+  }
+});
+
+module.exports = router;
