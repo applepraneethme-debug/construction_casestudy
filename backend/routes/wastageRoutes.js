@@ -14,16 +14,17 @@ router.use(verifyCsrf);
 /**
  * 1. GET /api/wastage - Retrieve physical wastage register with role/site scoping
  */
-router.get('/', async (req, res) => {
+router.get('/', requirePermission(PERMISSIONS.WASTAGE_READ), async (req, res) => {
   try {
     const filter = {};
 
+    // Site scoping for non-owners: non-owners only see their assigned sites; 0 assigned sites = 0 data
     if (req.user.role !== 'Owner') {
       const assigned = req.user.assignedSites || [];
-      filter.$or = [
-        { site: { $in: assigned } },
-        { site: 'General Site' }
-      ];
+      if (assigned.length === 0) {
+        return res.status(200).json([]);
+      }
+      filter.site = { $in: assigned };
     }
 
     if (req.query.site) filter.site = req.query.site;

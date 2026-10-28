@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { formatCurrency } from '../utils/format';
 
 const StockMovementLedger = () => {
   const { authFetch, user } = useAuth();
@@ -125,11 +126,12 @@ const StockMovementLedger = () => {
     <div>
       <div className="toolbar-bar">
         <div>
-          <h2>🔄 Stock Movement Ledger</h2>
+          <h2>🔄 Stock Movements</h2>
           <p style={{ color: '#64748b', fontSize: '0.9rem' }}>
             Append-only historical ledger tracking all material movements across construction sites
           </p>
         </div>
+
 
         {/* Action Buttons for Authorized Roles */}
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
@@ -273,19 +275,43 @@ const StockMovementLedger = () => {
                     </td>
                     <td><strong>{m.materialName}</strong></td>
                     <td>
-                      <span style={{ fontWeight: 600 }}>
-                        {m.movementType === 'issue' || m.movementType === 'wastage' ? '-' : '+'}
+                      <span style={{ 
+                        fontWeight: 600,
+                        color: m.direction === 'outbound' || m.movementType === 'issue' || m.movementType === 'wastage' ? '#dc2626' : '#16a34a'
+                      }}>
+                        {m.direction === 'outbound' || m.movementType === 'issue' || m.movementType === 'wastage' ? '- ' : '+ '}
                         {m.quantity} {m.unit}
                       </span>
+                      {m.direction && (
+                        <span style={{
+                          marginLeft: '0.4rem',
+                          fontSize: '0.68rem',
+                          padding: '0.1rem 0.35rem',
+                          borderRadius: '4px',
+                          textTransform: 'uppercase',
+                          fontWeight: 600,
+                          background: m.direction === 'inbound' ? '#dcfce7' : '#fee2e2',
+                          color: m.direction === 'inbound' ? '#15803d' : '#b91c1c'
+                        }}>
+                          {m.direction}
+                        </span>
+                      )}
                       {m.totalValue > 0 && (
                         <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                          ${m.totalValue.toLocaleString()}
+                          {formatCurrency(m.totalValue)}
                         </div>
                       )}
                     </td>
                     <td>
                       {m.movementType === 'transfer' ? (
-                        <span>{m.sourceSite} &rarr; <strong>{m.destinationSite}</strong></span>
+                        <span>
+                          {m.direction === 'inbound' ? (
+                            <span>📥 From <strong>{m.sourceSite}</strong></span>
+                          ) : (
+                            <span>📤 To <strong>{m.destinationSite}</strong></span>
+                          )}
+                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>At: {m.site}</div>
+                        </span>
                       ) : (
                         m.site
                       )}
@@ -353,8 +379,9 @@ const StockMovementLedger = () => {
 
               {activeModal === 'receipt' && (
                 <div className="form-group">
-                  <label>Unit Cost ($) [Optional]</label>
+                  <label>Unit Cost (₹) [Optional]</label>
                   <input
+
                     type="number"
                     className="form-control"
                     placeholder="Update unit purchase cost"

@@ -18,12 +18,13 @@ router.get('/', async (req, res) => {
   try {
     const filter = {};
 
+    // Site scoping for non-owners: non-owners only see their assigned sites; 0 assigned sites = 0 data
     if (req.user.role !== 'Owner') {
       const assigned = req.user.assignedSites || [];
-      filter.$or = [
-        { site: { $in: assigned } },
-        { site: 'General Site' }
-      ];
+      if (assigned.length === 0) {
+        return res.status(200).json([]);
+      }
+      filter.site = { $in: assigned };
     }
 
     if (req.query.status) {
@@ -193,76 +194,113 @@ router.patch('/:id/reject', requirePermission(PERMISSIONS.REQUISITIONS_APPROVE),
 router.post('/:id/fulfill', requirePermission(PERMISSIONS.INVENTORY_ISSUE), async (req, res) => {
   try {
     const { id } = req.params;
-    const requisition = await Requisition.findById(id);
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid requisition ID format' });
+    }
+
+    // Atomic transition to 'Processing' prevents duplicate fulfillment or race conditions
+    const requisition = await Requisition.findOneAndUpdate(
+      { _id: id, status: 'Approved' },
+      { status: 'Processing' },
+      { new: true }
+    );
 
     if (!requisition) {
-      return res.status(404).json({ message: 'Requisition not found.' });
-    }
-
-    if (requisition.status === 'Fulfilled') {
-      return res.status(400).json({ message: 'This requisition has already been fulfilled and issued.' });
-    }
-
-    if (requisition.status !== 'Approved') {
+      const existing = await Requisition.findById(id);
+      if (!existing) {
+        return res.status(404).json({ message: 'Requisition not found.' });
+      }
+      if (existing.status === 'Fulfilled') {
+        return res.status(400).json({ message: 'This requisition has already been fulfilled and issued.' });
+      }
+      if (existing.status === 'Processing') {
+        return res.status(409).json({ message: 'Requisition is currently being fulfilled by another process.' });
+      }
       return res.status(400).json({
-        message: `Requisition must be approved before materials can be issued. Current status: '${requisition.status}'`
+        message: `Requisition must be approved before materials can be issued. Current status: '${existing.status}'`
       });
     }
 
     // Site permission check
     if (req.user.role !== 'Owner' && requisition.site !== 'General Site' && !(req.user.assignedSites || []).includes(requisition.site)) {
+      await Requisition.findByIdAndUpdate(id, { status: 'Approved' });
       return res.status(403).json({ message: `Forbidden: No access to fulfill requisitions for site '${requisition.site}'` });
     }
 
-    // Verify stock availability for all items first
+    // Pre-verify stock availability for all items before any deduction
     for (const item of requisition.items) {
       const inv = await InventoryItem.findById(item.material);
       if (!inv || inv.quantity < item.quantityRequested) {
+        await Requisition.findByIdAndUpdate(id, { status: 'Approved' });
         return res.status(400).json({
           message: `Cannot fulfill: Insufficient stock for ${item.materialName}. Available: ${inv ? inv.quantity : 0}, Required: ${item.quantityRequested}`
         });
       }
     }
 
-    // Atomically decrement stock and record stock movements
-    for (const item of requisition.items) {
-      const updated = await InventoryItem.findOneAndUpdate(
-        { _id: item.material, quantity: { $gte: item.quantityRequested } },
-        { $inc: { quantity: -item.quantityRequested } },
-        { new: true }
-      );
+    const successfulDeductions = [];
+    const createdMovements = [];
 
-      item.quantityIssued = item.quantityRequested;
+    try {
+      // Atomically decrement stock and record stock movements
+      for (const item of requisition.items) {
+        const updated = await InventoryItem.findOneAndUpdate(
+          { _id: item.material, quantity: { $gte: item.quantityRequested } },
+          { $inc: { quantity: -item.quantityRequested } },
+          { new: true }
+        );
 
-      // Log movement to ledger
-      const movement = new StockMovement({
-        material: updated._id,
-        materialName: updated.itemName,
-        site: updated.site || requisition.site,
-        project: requisition.project || null,
-        movementType: 'issue',
-        quantity: item.quantityRequested,
-        unit: item.unit,
-        unitCost: updated.unitCost,
-        totalValue: Number((item.quantityRequested * updated.unitCost).toFixed(2)),
-        reference: requisition.requisitionNumber,
-        reason: `Requisition Fulfillment for activity: ${requisition.activity}`,
-        recordedBy: req.user._id,
-        recordedByName: req.user.name,
-        recordedByRole: req.user.role,
-        status: 'completed'
+        if (!updated) {
+          throw new Error(`Insufficient stock during atomic deduction for ${item.materialName}`);
+        }
+
+        successfulDeductions.push({ materialId: item.material, quantity: item.quantityRequested });
+        item.quantityIssued = item.quantityRequested;
+
+        // Log movement to ledger with outbound direction and requisition linkage
+        const movement = new StockMovement({
+          material: updated._id,
+          materialName: updated.itemName,
+          site: updated.site || requisition.site,
+          project: requisition.project || null,
+          movementType: 'issue',
+          direction: 'outbound',
+          linkedRequisition: requisition._id,
+          quantity: item.quantityRequested,
+          unit: item.unit,
+          unitCost: updated.unitCost,
+          totalValue: Number((item.quantityRequested * updated.unitCost).toFixed(2)),
+          reference: requisition.requisitionNumber,
+          reason: `Requisition Fulfillment for activity: ${requisition.activity}`,
+          recordedBy: req.user._id,
+          recordedByName: req.user.name,
+          recordedByRole: req.user.role,
+          status: 'completed'
+        });
+        await movement.save();
+        createdMovements.push(movement._id);
+      }
+
+      requisition.status = 'Fulfilled';
+      requisition.fulfilledDate = new Date();
+      await requisition.save();
+
+      res.status(200).json({
+        message: `Requisition ${requisition.requisitionNumber} fulfilled successfully! Stock deducted and ledger updated.`,
+        requisition
       });
-      await movement.save();
+    } catch (fulfillmentErr) {
+      // Rollback all successful deductions if any line item failed
+      for (const deduction of successfulDeductions) {
+        await InventoryItem.findByIdAndUpdate(deduction.materialId, { $inc: { quantity: deduction.quantity } });
+      }
+      if (createdMovements.length > 0) {
+        await StockMovement.deleteMany({ _id: { $in: createdMovements } });
+      }
+      await Requisition.findByIdAndUpdate(id, { status: 'Approved' });
+      return res.status(400).json({ message: 'Fulfillment failed and was rolled back: ' + fulfillmentErr.message });
     }
-
-    requisition.status = 'Fulfilled';
-    requisition.fulfilledDate = new Date();
-    await requisition.save();
-
-    res.status(200).json({
-      message: `Requisition ${requisition.requisitionNumber} fulfilled successfully! Stock deducted and ledger updated.`,
-      requisition
-    });
   } catch (error) {
     res.status(500).json({ message: 'Error fulfilling requisition: ' + error.message });
   }

@@ -17,13 +17,13 @@ router.get('/', requirePermission(PERMISSIONS.INVENTORY_READ), async (req, res) 
   try {
     const filter = {};
 
-    // Site scoping for non-owners: non-owners only see their assigned sites or unassigned legacy
+    // Site scoping for non-owners: non-owners only see their assigned sites; 0 assigned sites = 0 data
     if (req.user.role !== 'Owner') {
       const assigned = req.user.assignedSites || [];
-      filter.$or = [
-        { site: { $in: assigned } },
-        { site: 'General Site' }
-      ];
+      if (assigned.length === 0) {
+        return res.status(200).json([]);
+      }
+      filter.site = { $in: assigned };
     }
 
     if (req.query.site) {
@@ -90,6 +90,7 @@ router.post('/receipt', requirePermission(PERMISSIONS.INVENTORY_RECEIVE), async 
       site: item.site || 'General Site',
       project: item.project || null,
       movementType: 'receipt',
+      direction: 'inbound',
       quantity: numQty,
       unit: item.unit,
       unitCost: cost,
@@ -162,6 +163,7 @@ router.post('/issue', requirePermission(PERMISSIONS.INVENTORY_ISSUE), async (req
       site: updatedItem.site || 'General Site',
       project: updatedItem.project || null,
       movementType: 'issue',
+      direction: 'outbound',
       quantity: numQty,
       unit: updatedItem.unit,
       unitCost: updatedItem.unitCost,
@@ -221,6 +223,7 @@ router.post('/return', requirePermission(PERMISSIONS.INVENTORY_RETURN), async (r
       site: item.site || 'General Site',
       project: item.project || null,
       movementType: 'return',
+      direction: 'inbound',
       quantity: numQty,
       unit: item.unit,
       unitCost: item.unitCost,
@@ -311,7 +314,10 @@ router.post('/transfer', requirePermission(PERMISSIONS.INVENTORY_ADJUST), async 
       await destItem.save();
     }
 
-    const movement = new StockMovement({
+    const transferGroupId = 'TRF-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+
+    // Outbound movement from source site
+    const outboundMovement = new StockMovement({
       material: sourceItem._id,
       materialName: sourceItem.itemName,
       site: sourceSite,
@@ -319,24 +325,52 @@ router.post('/transfer', requirePermission(PERMISSIONS.INVENTORY_ADJUST), async 
       destinationSite: destinationSite.trim(),
       project: sourceItem.project || null,
       movementType: 'transfer',
+      direction: 'outbound',
+      transferGroupId,
       quantity: numQty,
       unit: sourceItem.unit,
       unitCost: sourceItem.unitCost,
       totalValue: Number((numQty * sourceItem.unitCost).toFixed(2)),
       reference: reference ? reference.trim() : 'Site Transfer Slip',
-      reason: reason ? reason.trim() : `Transfer from ${sourceSite} to ${destinationSite.trim()}`,
+      reason: reason ? reason.trim() : `Transfer to ${destinationSite.trim()}`,
       recordedBy: req.user._id,
       recordedByName: req.user.name,
       recordedByRole: req.user.role,
       status: 'completed',
       notes: notes ? notes.trim() : ''
     });
+    await outboundMovement.save();
 
-    await movement.save();
+    // Inbound movement into destination site
+    const inboundMovement = new StockMovement({
+      material: destItem._id,
+      materialName: destItem.itemName,
+      site: destinationSite.trim(),
+      sourceSite,
+      destinationSite: destinationSite.trim(),
+      project: destItem.project || sourceItem.project || null,
+      movementType: 'transfer',
+      direction: 'inbound',
+      transferGroupId,
+      quantity: numQty,
+      unit: destItem.unit,
+      unitCost: destItem.unitCost,
+      totalValue: Number((numQty * destItem.unitCost).toFixed(2)),
+      reference: reference ? reference.trim() : 'Site Transfer Slip',
+      reason: reason ? reason.trim() : `Transfer received from ${sourceSite}`,
+      recordedBy: req.user._id,
+      recordedByName: req.user.name,
+      recordedByRole: req.user.role,
+      status: 'completed',
+      notes: notes ? notes.trim() : ''
+    });
+    await inboundMovement.save();
 
     res.status(201).json({
       message: `Transferred ${numQty} ${sourceItem.unit} from ${sourceSite} to ${destinationSite.trim()}`,
-      movement,
+      movement: outboundMovement,
+      inboundMovement,
+      transferGroupId,
       sourceBalance: sourceItem.quantity,
       destBalance: destItem.quantity
     });
@@ -383,6 +417,7 @@ router.post('/adjustment', requirePermission(PERMISSIONS.INVENTORY_ADJUST), asyn
       site: item.site || 'General Site',
       project: item.project || null,
       movementType: 'adjustment',
+      direction: variance > 0 ? 'inbound' : 'outbound',
       quantity: Math.abs(variance),
       unit: item.unit,
       unitCost: item.unitCost,

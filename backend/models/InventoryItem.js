@@ -58,9 +58,14 @@ const inventoryItemSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: ''
+    },
+    isArchived: {
+      type: Boolean,
+      default: false
     }
   },
   {
+
     timestamps: true // Automatically adds createdAt and updatedAt fields
   }
 );

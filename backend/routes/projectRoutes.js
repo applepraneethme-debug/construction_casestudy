@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const Project = require('../models/Project');
+const Site = require('../models/Site');
 const { authenticate, requirePermission, verifyCsrf } = require('../middleware/authMiddleware');
 const { PERMISSIONS } = require('../config/permissions');
 
@@ -10,7 +11,7 @@ router.use(authenticate);
 router.use(verifyCsrf);
 
 /**
- * 1. GET /api/projects - Retrieve projects
+ * 1. GET /api/projects - Retrieve projects (Company-wide for Owner, scoped for non-owners)
  */
 router.get('/', async (req, res) => {
   try {
@@ -18,6 +19,17 @@ router.get('/', async (req, res) => {
     if (req.query.status) {
       filter.status = req.query.status;
     }
+
+    if (req.user.role !== 'Owner') {
+      const assigned = req.user.assignedSites || [];
+      if (assigned.length === 0) {
+        return res.status(200).json([]);
+      }
+      const userSites = await Site.find({ name: { $in: assigned } }).select('project');
+      const projectIds = userSites.map((s) => s.project).filter(Boolean);
+      filter._id = { $in: projectIds };
+    }
+
     const projects = await Project.find(filter).sort({ createdAt: -1 });
     res.status(200).json(projects);
   } catch (error) {

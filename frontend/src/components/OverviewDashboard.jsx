@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { formatCurrency } from '../utils/format';
 
 const OverviewDashboard = ({ onNavigate }) => {
   const { authFetch, user } = useAuth();
@@ -37,24 +38,23 @@ const OverviewDashboard = ({ onNavigate }) => {
 
   return (
     <div>
-      {/* Role-specific greeting banner */}
-      <div style={{ marginBottom: '1.5rem', background: '#ffffff', padding: '1.25rem 1.5rem', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* Overview Module Header */}
+      <div className="toolbar-bar" style={{ marginBottom: '1.25rem' }}>
         <div>
-          <h2 style={{ fontSize: '1.4rem', color: '#0f172a' }}>
-            Welcome back, {user.name}
-          </h2>
-          <p style={{ color: '#64748b', fontSize: '0.9rem', margin: '0.2rem 0 0 0' }}>
-            Operating Role: <strong>{user.role}</strong> &bull; Site Scope: <strong>{user.role === 'Owner' ? 'Global (All Company Sites)' : (user.assignedSites?.length ? user.assignedSites.join(', ') : 'None')}</strong>
+          <h2>📊 Executive Project & Material Overview</h2>
+          <p style={{ color: '#64748b', fontSize: '0.9rem' }}>
+            Real-time material valuation, site status, stock ledger alerts, and consumption analytics
           </p>
         </div>
         <button
           onClick={fetchDashboard}
           className="btn btn-secondary"
-          style={{ width: 'auto', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', padding: '0.5rem 1rem' }}
+          style={{ width: 'auto', background: '#ffffff', color: '#334155', border: '1px solid #cbd5e1', padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}
         >
           🔄 Refresh Metrics
         </button>
       </div>
+
 
       {/* KPI Stats Grid */}
       <div className="stat-grid">
@@ -67,7 +67,7 @@ const OverviewDashboard = ({ onNavigate }) => {
         <div className="stat-card">
           <span className="stat-label">Estimated Stock Valuation</span>
           <span className="stat-value" style={{ color: '#059669' }}>
-            ${inventory.totalValuation.toLocaleString()}
+            {formatCurrency(inventory.totalValuation)}
           </span>
           <span className="stat-hint">Sum(Qty &times; Unit Cost)</span>
         </div>
@@ -83,10 +83,11 @@ const OverviewDashboard = ({ onNavigate }) => {
         <div className="stat-card">
           <span className="stat-label">Total Wastage Cost</span>
           <span className="stat-value" style={{ color: wastage.totalWastageCost > 0 ? '#b91c1c' : '#475569' }}>
-            ${wastage.totalWastageCost.toLocaleString()}
+            {formatCurrency(wastage.totalWastageCost)}
           </span>
           <span className="stat-hint">{wastage.totalWastageQuantity} units confirmed loss</span>
         </div>
+
 
         <div className="stat-card">
           <span className="stat-label">Active Projects / Sites</span>

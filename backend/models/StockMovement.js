@@ -56,6 +56,21 @@ const stockMovementSchema = new mongoose.Schema(
       trim: true,
       default: ''
     },
+    direction: {
+      type: String,
+      enum: ['inbound', 'outbound', 'neutral'],
+      default: 'inbound'
+    },
+    transferGroupId: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    linkedRequisition: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Requisition',
+      default: null
+    },
     reference: {
       type: String,
       trim: true,

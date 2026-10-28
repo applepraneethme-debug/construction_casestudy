@@ -1,12 +1,15 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const InventoryItem = require('../models/InventoryItem');
+const StockMovement = require('../models/StockMovement');
+const WastageRecord = require('../models/WastageRecord');
 const {
   authenticate,
   requirePermission,
   verifyCsrf
 } = require('../middleware/authMiddleware');
 const { PERMISSIONS } = require('../config/permissions');
+
 
 const router = express.Router();
 
@@ -21,16 +24,19 @@ router.get('/', requirePermission(PERMISSIONS.INVENTORY_READ), async (req, res) 
   try {
     const filter = {};
 
-    // For non-Owner users, scope inventory to assigned sites while keeping legacy/general items accessible
+    if (req.query.includeArchived !== 'true') {
+      filter.isArchived = { $ne: true };
+    }
+
+    // Strictly scope inventory to assigned sites; non-owner with 0 sites receives 0 data
     if (req.user.role !== 'Owner') {
       const assignedSites = req.user.assignedSites || [];
-      filter.$or = [
-        { site: { $in: assignedSites } },
-        { site: 'General Site' },
-        { site: null },
-        { site: { $exists: false } }
-      ];
+      if (assignedSites.length === 0) {
+        return res.status(200).json([]);
+      }
+      filter.site = { $in: assignedSites };
     }
+
 
     // Optional query filter by site
     if (req.query.site) {
@@ -144,12 +150,38 @@ router.post('/', requirePermission(PERMISSIONS.INVENTORY_CREATE), async (req, re
     });
 
     const savedItem = await newItem.save();
+
+    // If item is registered with an opening quantity > 0, record opening-balance ledger entry
+    if (numQty > 0) {
+      const openingMovement = new StockMovement({
+        material: savedItem._id,
+        materialName: savedItem.itemName,
+        site: savedItem.site || 'General Site',
+        project: savedItem.project || null,
+        movementType: 'receipt',
+        direction: 'inbound',
+        quantity: numQty,
+        unit: savedItem.unit,
+        unitCost: savedItem.unitCost,
+        totalValue: Number((numQty * savedItem.unitCost).toFixed(2)),
+        reference: 'OPENING-BALANCE',
+        reason: 'Initial opening stock registered with inventory item',
+        recordedBy: req.user._id,
+        recordedByName: req.user.name,
+        recordedByRole: req.user.role,
+        status: 'completed',
+        notes: 'Opening stock balance'
+      });
+      await openingMovement.save();
+    }
+
     const populated = await InventoryItem.findById(savedItem._id).populate('project', 'name code');
 
     res.status(201).json({
       message: 'Inventory item added successfully!',
       item: populated
     });
+
   } catch (error) {
     res.status(500).json({ message: 'Server Error: ' + error.message });
   }
@@ -197,15 +229,13 @@ router.put('/:id', requirePermission(PERMISSIONS.INVENTORY_UPDATE), async (req, 
       storageLocation
     } = req.body;
 
-    if (quantity !== undefined) {
-      const numQty = Number(quantity);
-      if (isNaN(numQty) || numQty < 0) {
-        return res.status(400).json({
-          message: 'Quantity must be a non-negative number.'
-        });
-      }
-      existingItem.quantity = numQty;
+    // Prevent arbitrary stock balance overwrite via inventory edit
+    if (quantity !== undefined && Number(quantity) !== existingItem.quantity) {
+      return res.status(400).json({
+        message: 'Direct quantity modification via inventory edit is prohibited. All stock changes must be recorded through audited Stock Movements (Receipt, Issue, Transfer, or Adjustment).'
+      });
     }
+
 
     if (site && site.trim()) {
       const targetSite = site.trim();
@@ -245,9 +275,6 @@ router.put('/:id', requirePermission(PERMISSIONS.INVENTORY_UPDATE), async (req, 
   }
 });
 
-/**
- * 4. DELETE /api/inventory/:id - Remove item by ID (Requires Owner permission)
- */
 router.delete('/:id', requirePermission(PERMISSIONS.INVENTORY_DELETE), async (req, res) => {
   try {
     const { id } = req.params;
@@ -256,12 +283,29 @@ router.delete('/:id', requirePermission(PERMISSIONS.INVENTORY_DELETE), async (re
       return res.status(400).json({ message: 'Invalid item ID format' });
     }
 
-    const deletedItem = await InventoryItem.findByIdAndDelete(id);
-    if (!deletedItem) {
+    const existingItem = await InventoryItem.findById(id);
+    if (!existingItem) {
       return res.status(404).json({ message: 'Item not found!' });
     }
 
-    res.status(200).json({ message: 'Item removed successfully!' });
+    // Check if movements or wastage records reference this item
+    const movementCount = await StockMovement.countDocuments({ material: id });
+    const wastageCount = await WastageRecord.countDocuments({ material: id });
+
+    if (movementCount > 0 || wastageCount > 0) {
+      // Soft-delete / archive to preserve historical ledger records
+      existingItem.isArchived = true;
+      await existingItem.save();
+      return res.status(200).json({
+        message: 'Item has historical transactions and was safely archived rather than deleted to preserve audit trail.',
+        archived: true,
+        item: existingItem
+      });
+    }
+
+    // Hard delete if completely unused
+    await InventoryItem.findByIdAndDelete(id);
+    res.status(200).json({ message: 'Item removed successfully!', archived: false });
   } catch (error) {
     res.status(500).json({ message: 'Server Error: ' + error.message });
   }

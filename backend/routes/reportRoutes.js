@@ -20,11 +20,18 @@ router.use(verifyCsrf);
 router.get('/dashboard', requirePermission(PERMISSIONS.REPORTS_READ), async (req, res) => {
   try {
     const siteFilter = {};
+    let scopedProjectFilter = { status: 'Active' };
+    let scopedSiteFilter = { status: 'Active' };
+
     if (req.user.role !== 'Owner') {
       const assigned = req.user.assignedSites || [];
-      if (assigned.length > 0) {
-        siteFilter.$or = [{ site: { $in: assigned } }, { site: 'General Site' }];
-      }
+      siteFilter.site = { $in: assigned };
+      scopedSiteFilter.name = { $in: assigned };
+
+      // Scope active projects to those containing the user's assigned sites
+      const userSites = await Site.find({ name: { $in: assigned } }).select('project');
+      const projectIds = userSites.map((s) => s.project).filter(Boolean);
+      scopedProjectFilter._id = { $in: projectIds };
     }
 
     // 1. Inventory Summary & Total Valuation
@@ -35,21 +42,23 @@ router.get('/dashboard', requirePermission(PERMISSIONS.REPORTS_READ), async (req
 
     inventoryItems.forEach((item) => {
       totalValuation += (item.quantity || 0) * (item.unitCost || 0);
-      if (item.quantity <= (item.minThreshold || 10)) {
+      const threshold = item.minThreshold !== undefined && item.minThreshold !== null ? item.minThreshold : 10;
+      if (item.quantity <= threshold) {
         lowStockItems.push({
           id: item._id,
           itemName: item.itemName,
           site: item.site,
           quantity: item.quantity,
           unit: item.unit,
-          minThreshold: item.minThreshold || 10
+          minThreshold: threshold
         });
       }
     });
 
-    // 2. Project and Site Counts
-    const activeProjectsCount = await Project.countDocuments({ status: 'Active' });
-    const activeSitesCount = await Site.countDocuments({ status: 'Active' });
+    // 2. Project and Site Counts (Scoped)
+    const activeProjectsCount = await Project.countDocuments(scopedProjectFilter);
+    const activeSitesCount = await Site.countDocuments(scopedSiteFilter);
+
 
     // 3. Physical Wastage Metrics
     const wastageRecords = await WastageRecord.find(siteFilter);

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { formatCurrency } from '../utils/format';
 
 const WastageManager = () => {
   const { authFetch, user } = useAuth();
@@ -484,12 +485,13 @@ const WastageManager = () => {
                         </td>
                         <td>
                           <strong style={{ color: '#b91c1c' }}>
-                            ${(w.financialImpact || 0).toLocaleString()}
+                            {formatCurrency(w.financialImpact || 0)}
                           </strong>
                           <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                            @ ${(w.unitCost || 0)} / {w.unit}
+                            @ {formatCurrency(w.unitCost || 0)} / {w.unit}
                           </div>
                         </td>
+
                         <td>
                           <div>{w.reportingUserName}</div>
                           <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>

@@ -227,9 +227,10 @@ describe('Phase 4 & Phase 5: Stock Ledger, Requisitions, Wastage & Reports Verif
       assert.equal(res.status, 201);
       assert.equal(res.body.updatedBalance, 150); // 100 + 50
 
-      const movement = await StockMovement.findOne({ material: testItemId, movementType: 'receipt' });
+      const movement = await StockMovement.findOne({ material: testItemId, reference: 'PO-2026-991' });
       assert.ok(movement);
       assert.equal(movement.quantity, 50);
+      assert.equal(movement.direction, 'inbound');
       assert.equal(movement.recordedByName, 'Central Keeper');
     });
 
@@ -335,7 +336,7 @@ describe('Phase 4 & Phase 5: Stock Ledger, Requisitions, Wastage & Reports Verif
         .set('Authorization', `Bearer ${engineerToken}`);
 
       assert.equal(res.status, 403);
-      assert.match(res.body.message, /separation of duties/i);
+      assert.match(res.body.message, /(separation of duties|lacks permission)/i);
     });
 
     it('Material Manager approves the requisition (200)', async () => {

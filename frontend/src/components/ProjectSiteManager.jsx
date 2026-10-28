@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { formatCurrency } from '../utils/format';
 
 const ProjectSiteManager = () => {
   const { authFetch, user } = useAuth();
@@ -178,8 +179,9 @@ const ProjectSiteManager = () => {
 
                 <div style={{ fontSize: '0.82rem', color: '#475569', marginBottom: '1rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.5rem' }}>
                   <div>📍 Location: <strong>{proj.location || 'Not specified'}</strong></div>
-                  <div>💰 Budget: <strong>${(proj.budget || 0).toLocaleString()}</strong></div>
+                  <div>💰 Budget: <strong>{formatCurrency(proj.budget || 0)}</strong></div>
                 </div>
+
 
                 <div style={{ marginTop: 'auto', borderTop: '1px solid #e2e8f0', paddingTop: '0.75rem' }}>
                   <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem', color: '#1e293b' }}>
@@ -258,8 +260,9 @@ const ProjectSiteManager = () => {
               </div>
 
               <div className="form-group">
-                <label>Budget Allocation ($)</label>
+                <label>Budget Allocation (₹)</label>
                 <input
+
                   type="number"
                   className="form-control"
                   placeholder="e.g. 2500000"

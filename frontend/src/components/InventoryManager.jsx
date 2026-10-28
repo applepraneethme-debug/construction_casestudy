@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { formatCurrency } from '../utils/format';
 import InventoryForm from './InventoryForm';
 import InventoryList from './InventoryList';
 
@@ -76,7 +77,7 @@ const InventoryManager = () => {
   };
 
   const totalValuation = items.reduce((acc, it) => acc + (it.quantity || 0) * (it.unitCost || 0), 0);
-  const lowStockCount = items.filter((it) => it.quantity <= (it.minThreshold || 10)).length;
+  const lowStockCount = items.filter((it) => it.quantity <= (it.minThreshold ?? 10)).length;
 
   return (
     <div>
@@ -153,10 +154,11 @@ const InventoryManager = () => {
           </div>
 
           <div style={{ fontSize: '0.85rem', color: '#475569' }}>
-            Filtered Value: <strong style={{ color: '#059669' }}>${totalValuation.toLocaleString()}</strong>
+            Filtered Value: <strong style={{ color: '#059669' }}>{formatCurrency(totalValuation)}</strong>
           </div>
         </div>
       </div>
+
 
       {/* Grid Layout: If showForm is true, Form + Table; Else full-width Table */}
       <div className={showForm ? 'app-grid' : ''}>

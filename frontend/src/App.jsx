@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import Navbar from './components/Navbar';
+import Sidebar from './components/Sidebar';
+import CompactHeader from './components/CompactHeader';
 import LoginView from './components/LoginView';
 import OverviewDashboard from './components/OverviewDashboard';
 import InventoryManager from './components/InventoryManager';
@@ -16,11 +17,13 @@ import UserManagement from './components/UserManagement';
 function MainContent() {
   const { user, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   if (authLoading) {
     return (
-      <div className="container" style={{ textAlign: 'center', marginTop: '6rem' }}>
-        <p style={{ fontSize: '1.25rem', color: '#64748b' }}>⏳ Authenticating session with server...</p>
+      <div className="loading-screen">
+        <p>⏳ Authenticating session with server...</p>
       </div>
     );
   }
@@ -30,40 +33,55 @@ function MainContent() {
   }
 
   return (
-    <div className="container">
-      {/* Header and RBAC Navigation */}
-      <Navbar activeTab={activeTab} onSelectTab={setActiveTab} />
+    <div className={`app-layout ${isSidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}>
+      {/* Left Sidebar Navigation */}
+      <Sidebar
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        isCollapsed={isSidebarCollapsed}
+        setIsCollapsed={setIsSidebarCollapsed}
+        isMobileOpen={isMobileSidebarOpen}
+        setIsMobileOpen={setIsMobileSidebarOpen}
+      />
 
-      {/* Module Views */}
-      <main>
-        {activeTab === 'overview' && (
-          <OverviewDashboard onNavigate={setActiveTab} />
-        )}
+      {/* Main Content Area */}
+      <div className="app-main-content">
+        <CompactHeader
+          activeTab={activeTab}
+          onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
+        />
 
-        {activeTab === 'inventory' && (
-          <InventoryManager />
-        )}
+        {/* Module Views */}
+        <main className="module-container">
+          {activeTab === 'overview' && (
+            <OverviewDashboard onNavigate={setActiveTab} />
+          )}
 
-        {activeTab === 'projects' && (
-          <ProjectSiteManager />
-        )}
+          {activeTab === 'inventory' && (
+            <InventoryManager />
+          )}
 
-        {activeTab === 'movements' && (
-          <StockMovementLedger />
-        )}
+          {activeTab === 'projects' && (
+            <ProjectSiteManager />
+          )}
 
-        {activeTab === 'requisitions' && (
-          <RequisitionManager />
-        )}
+          {activeTab === 'movements' && (
+            <StockMovementLedger />
+          )}
 
-        {activeTab === 'wastage' && (
-          <WastageManager />
-        )}
+          {activeTab === 'requisitions' && (
+            <RequisitionManager />
+          )}
 
-        {activeTab === 'users' && user.role === 'Owner' && (
-          <UserManagement />
-        )}
-      </main>
+          {activeTab === 'wastage' && (
+            <WastageManager />
+          )}
+
+          {activeTab === 'users' && user.role === 'Owner' && (
+            <UserManagement />
+          )}
+        </main>
+      </div>
     </div>
   );
 }
@@ -77,3 +95,4 @@ function App() {
 }
 
 export default App;
+

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { STANDARD_UNITS } from '../utils/format';
 
 /**
  * InventoryForm Component
@@ -179,9 +180,11 @@ const InventoryForm = ({ onItemAdded, itemToEdit, onCancelEdit }) => {
           </select>
         </div>
 
-        <div className="form-group" style={{ display: 'flex', gap: '1rem' }}>
-          <div style={{ flex: 1 }}>
-            <label htmlFor="quantity">Quantity</label>
+        <div className="form-group" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: '140px' }}>
+            <label htmlFor="quantity">
+              {itemToEdit ? 'Current Stock (Read-Only)' : 'Opening Quantity'}
+            </label>
             <input
               type="number"
               id="quantity"
@@ -192,11 +195,18 @@ const InventoryForm = ({ onItemAdded, itemToEdit, onCancelEdit }) => {
               onChange={handleChange}
               min="0"
               step="any"
-              required
+              disabled={Boolean(itemToEdit)}
+              style={itemToEdit ? { backgroundColor: '#f1f5f9', cursor: 'not-allowed', color: '#64748b' } : {}}
+              required={!itemToEdit}
             />
+            {itemToEdit && (
+              <small style={{ fontSize: '0.72rem', color: '#64748b', display: 'block', marginTop: '3px' }}>
+                🔒 Stock balance changes are recorded via Stock Movements.
+              </small>
+            )}
           </div>
-          <div style={{ flex: 1 }}>
-            <label htmlFor="unit">Unit</label>
+          <div style={{ flex: 1, minWidth: '140px' }}>
+            <label htmlFor="unit">Unit of Measurement</label>
             <select
               id="unit"
               name="unit"
@@ -205,20 +215,21 @@ const InventoryForm = ({ onItemAdded, itemToEdit, onCancelEdit }) => {
               onChange={handleChange}
               required
             >
-              <option value="pieces">Pieces</option>
-              <option value="bags">Bags</option>
-              <option value="kg">Kg</option>
-              <option value="tons">Tons</option>
-              <option value="liters">Liters</option>
-              <option value="meters">Meters</option>
-              <option value="sq.ft">Sq. Ft</option>
+              {STANDARD_UNITS.map((u) => (
+                <option key={u} value={u}>
+                  {u}
+                </option>
+              ))}
+              {!STANDARD_UNITS.includes(formData.unit) && (
+                <option value={formData.unit}>{formData.unit}</option>
+              )}
             </select>
           </div>
         </div>
 
-        <div className="form-group" style={{ display: 'flex', gap: '1rem' }}>
-          <div style={{ flex: 1 }}>
-            <label htmlFor="unitCost">Unit Cost ($)</label>
+        <div className="form-group" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: '140px' }}>
+            <label htmlFor="unitCost">Unit Cost (₹)</label>
             <input
               type="number"
               id="unitCost"
@@ -231,8 +242,9 @@ const InventoryForm = ({ onItemAdded, itemToEdit, onCancelEdit }) => {
               step="any"
             />
           </div>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, minWidth: '140px' }}>
             <label htmlFor="minThreshold">Min Alert Threshold</label>
+
             <input
               type="number"
               id="minThreshold"

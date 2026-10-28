@@ -222,11 +222,25 @@ describe('Phase 2 & Phase 3: Authentication and RBAC Verification Suite', () => 
         .put(`/api/inventory/${sampleItemId}`)
         .set('Authorization', `Bearer ${materialManagerToken}`)
         .send({
-          quantity: 75
+          unitCost: 85,
+          minThreshold: 20
         });
 
       assert.equal(res.status, 200);
-      assert.equal(res.body.item.quantity, 75);
+      assert.equal(res.body.item.unitCost, 85);
+      assert.equal(res.body.item.minThreshold, 20);
+    });
+
+    it('10b. Direct quantity editing via PUT is rejected to protect ledger integrity (400)', async () => {
+      const res = await request(app)
+        .put(`/api/inventory/${sampleItemId}`)
+        .set('Authorization', `Bearer ${materialManagerToken}`)
+        .send({
+          quantity: 999
+        });
+
+      assert.equal(res.status, 400);
+      assert.match(res.body.message, /Direct quantity modification/i);
     });
   });
 

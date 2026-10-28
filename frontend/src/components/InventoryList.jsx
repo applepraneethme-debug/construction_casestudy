@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
+import { formatCurrency } from '../utils/format';
 
 /**
  * InventoryList Component
@@ -46,7 +47,8 @@ const InventoryList = ({ items, onDeleteItem, onEditItem, loading }) => {
             </thead>
             <tbody>
               {items.map((item) => {
-                const isLowStock = item.quantity <= (item.minThreshold || 10);
+                const threshold = item.minThreshold ?? 10;
+                const isLowStock = item.quantity <= threshold;
                 const itemValuation = (item.quantity || 0) * (item.unitCost || 0);
 
                 return (
@@ -71,7 +73,7 @@ const InventoryList = ({ items, onDeleteItem, onEditItem, loading }) => {
                             borderRadius: '4px'
                           }}
                         >
-                          ⚠️ Low Stock (&le; {item.minThreshold || 10})
+                          ⚠️ Low Stock (&le; {threshold})
                         </span>
                       )}
                     </td>
@@ -94,11 +96,12 @@ const InventoryList = ({ items, onDeleteItem, onEditItem, loading }) => {
                       <strong>{item.quantity}</strong> <span style={{ color: '#64748b' }}>{item.unit}</span>
                       {item.unitCost > 0 && (
                         <div style={{ fontSize: '0.75rem', color: '#059669', fontWeight: 500 }}>
-                          ${item.unitCost}/{item.unit} &bull; ${itemValuation.toLocaleString()}
+                          {formatCurrency(item.unitCost)} / {item.unit} &bull; {formatCurrency(itemValuation)}
                         </div>
                       )}
                     </td>
                     <td>{item.supplier}</td>
+
                     <td>
                       <div style={{ display: 'flex', gap: '0.35rem' }}>
                         {canEdit && (
