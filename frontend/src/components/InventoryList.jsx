@@ -14,12 +14,12 @@ const InventoryList = ({ items, onDeleteItem, onEditItem, loading }) => {
 
   return (
     <div className="card">
-      <h2 className="card-title">
+      <h3 className="card-title">
         📋 Current Inventory Items
         <span style={{ fontSize: '0.85rem', color: '#64748b', marginLeft: 'auto' }}>
           Total Items: {items.length}
         </span>
-      </h2>
+      </h3>
 
       {loading ? (
         <div className="empty-state">
@@ -96,7 +96,7 @@ const InventoryList = ({ items, onDeleteItem, onEditItem, loading }) => {
                       <strong>{item.quantity}</strong> <span style={{ color: '#64748b' }}>{item.unit}</span>
                       {item.unitCost > 0 && (
                         <div style={{ fontSize: '0.75rem', color: '#059669', fontWeight: 500 }}>
-                          {formatCurrency(item.unitCost)} / {item.unit} &bull; {formatCurrency(itemValuation)}
+                          {formatCurrency(item.unitCost)} / {item.unit} • {formatCurrency(itemValuation)}
                         </div>
                       )}
                     </td>

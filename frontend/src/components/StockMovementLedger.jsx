@@ -81,14 +81,16 @@ const StockMovementLedger = () => {
   const handleOpenModal = (type) => {
     setActiveModal(type);
     setMessage({ type: '', text: '' });
+    const firstMat = materials[0];
+    const eligibleSites = sites.filter((s) => s.name !== firstMat?.site);
     setModalForm({
-      materialId: materials[0]?._id || '',
+      materialId: firstMat?._id || '',
       quantity: '',
       unitCost: '',
       reference: '',
       reason: '',
       activity: '',
-      destinationSite: sites[0]?.name || '',
+      destinationSite: eligibleSites[0]?.name || '',
       newPhysicalQuantity: '',
       notes: ''
     });
@@ -263,26 +265,35 @@ const StockMovementLedger = () => {
                 </tr>
               </thead>
               <tbody>
-                {movements.map((m) => (
-                  <tr key={m._id}>
-                    <td style={{ fontSize: '0.78rem', color: '#64748b', whiteSpace: 'nowrap' }}>
-                      {new Date(m.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                    </td>
-                    <td>
-                      <span className={`badge-status badge-${m.movementType}`}>
-                        {m.movementType}
-                      </span>
-                    </td>
-                    <td><strong>{m.materialName}</strong></td>
-                    <td>
-                      <span style={{ 
-                        fontWeight: 600,
-                        color: m.direction === 'outbound' || m.movementType === 'issue' || m.movementType === 'wastage' ? '#dc2626' : '#16a34a'
-                      }}>
-                        {m.direction === 'outbound' || m.movementType === 'issue' || m.movementType === 'wastage' ? '- ' : '+ '}
-                        {m.quantity} {m.unit}
-                      </span>
-                      {m.direction && (
+                {movements.map((m) => {
+                  const effectiveDirection = m.direction || (
+                    m.movementType === 'receipt' || m.movementType === 'return' ? 'inbound' :
+                    m.movementType === 'issue' || m.movementType === 'wastage' ? 'outbound' :
+                    m.movementType === 'transfer' ? (m.destinationSite && m.site === m.destinationSite ? 'inbound' : 'outbound') :
+                    'neutral'
+                  );
+                  const isOutbound = effectiveDirection === 'outbound';
+                  const isNeutral = effectiveDirection === 'neutral';
+
+                  return (
+                    <tr key={m._id}>
+                      <td style={{ fontSize: '0.78rem', color: '#64748b', whiteSpace: 'nowrap' }}>
+                        {new Date(m.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                      </td>
+                      <td>
+                        <span className={`badge-status badge-${m.movementType}`}>
+                          {m.movementType}
+                        </span>
+                      </td>
+                      <td><strong>{m.materialName}</strong></td>
+                      <td>
+                        <span style={{ 
+                          fontWeight: 600,
+                          color: isOutbound ? '#dc2626' : (isNeutral ? '#64748b' : '#16a34a')
+                        }}>
+                          {isOutbound ? '- ' : (isNeutral ? '± ' : '+ ')}
+                          {m.quantity} {m.unit}
+                        </span>
                         <span style={{
                           marginLeft: '0.4rem',
                           fontSize: '0.68rem',
@@ -290,42 +301,42 @@ const StockMovementLedger = () => {
                           borderRadius: '4px',
                           textTransform: 'uppercase',
                           fontWeight: 600,
-                          background: m.direction === 'inbound' ? '#dcfce7' : '#fee2e2',
-                          color: m.direction === 'inbound' ? '#15803d' : '#b91c1c'
+                          background: effectiveDirection === 'inbound' ? '#dcfce7' : (isOutbound ? '#fee2e2' : '#f1f5f9'),
+                          color: effectiveDirection === 'inbound' ? '#15803d' : (isOutbound ? '#b91c1c' : '#475569')
                         }}>
-                          {m.direction}
+                          {effectiveDirection}
                         </span>
-                      )}
-                      {m.totalValue > 0 && (
-                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                          {formatCurrency(m.totalValue)}
-                        </div>
-                      )}
-                    </td>
-                    <td>
-                      {m.movementType === 'transfer' ? (
-                        <span>
-                          {m.direction === 'inbound' ? (
-                            <span>📥 From <strong>{m.sourceSite}</strong></span>
-                          ) : (
-                            <span>📤 To <strong>{m.destinationSite}</strong></span>
-                          )}
-                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>At: {m.site}</div>
-                        </span>
-                      ) : (
-                        m.site
-                      )}
-                    </td>
-                    <td>
-                      <div style={{ fontSize: '0.85rem', color: '#1e293b' }}>{m.reference}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{m.reason}</div>
-                    </td>
-                    <td>
-                      <div style={{ fontSize: '0.82rem', fontWeight: 500 }}>{m.recordedByName}</div>
-                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{m.recordedByRole}</div>
-                    </td>
-                  </tr>
-                ))}
+                        {m.totalValue > 0 && (
+                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                            {formatCurrency(m.totalValue)}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        {m.movementType === 'transfer' ? (
+                          <span>
+                            {effectiveDirection === 'inbound' ? (
+                              <span>📥 From <strong>{m.sourceSite}</strong></span>
+                            ) : (
+                              <span>📤 To <strong>{m.destinationSite}</strong></span>
+                            )}
+                            <div style={{ fontSize: '0.72rem', color: '#64748b' }}>At: {m.site}</div>
+                          </span>
+                        ) : (
+                          m.site
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ fontSize: '0.85rem', color: '#1e293b' }}>{m.reference}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{m.reason}</div>
+                      </td>
+                      <td>
+                        <div style={{ fontSize: '0.82rem', fontWeight: 500 }}>{m.recordedByName}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{m.recordedByRole}</div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -350,12 +361,23 @@ const StockMovementLedger = () => {
                 <select
                   className="form-control"
                   value={modalForm.materialId}
-                  onChange={(e) => setModalForm({ ...modalForm, materialId: e.target.value })}
+                  onChange={(e) => {
+                    const newMatId = e.target.value;
+                    const newMat = materials.find((m) => m._id === newMatId);
+                    const eligible = sites.filter((s) => s.name !== newMat?.site);
+                    setModalForm((prev) => ({
+                      ...prev,
+                      materialId: newMatId,
+                      destinationSite: eligible.some((s) => s.name === prev.destinationSite)
+                        ? prev.destinationSite
+                        : (eligible[0]?.name || '')
+                    }));
+                  }}
                   required
                 >
                   {materials.map((m) => (
                     <option key={m._id} value={m._id}>
-                      {m.itemName} (Available: {m.quantity} {m.unit} @ {m.site})
+                      {m.itemName} (Available: {m.quantity} {m.unit} @ {m.site || 'General Site'})
                     </option>
                   ))}
                 </select>
@@ -407,19 +429,35 @@ const StockMovementLedger = () => {
                 </div>
               )}
 
-              {activeModal === 'transfer' && (
-                <div className="form-group">
-                  <label>Destination Site</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="e.g. Site West"
-                    value={modalForm.destinationSite}
-                    onChange={(e) => setModalForm({ ...modalForm, destinationSite: e.target.value })}
-                    required
-                  />
-                </div>
-              )}
+              {activeModal === 'transfer' && (() => {
+                const selectedMat = materials.find((m) => m._id === modalForm.materialId);
+                const sourceSite = selectedMat?.site;
+                const eligibleSites = sites.filter((s) => s.name !== sourceSite);
+
+                return (
+                  <div className="form-group">
+                    <label>Destination Construction Site</label>
+                    <select
+                      className="form-control"
+                      value={modalForm.destinationSite}
+                      onChange={(e) => setModalForm({ ...modalForm, destinationSite: e.target.value })}
+                      required
+                    >
+                      <option value="">-- Select Destination Site --</option>
+                      {eligibleSites.map((s) => (
+                        <option key={s._id} value={s.name}>
+                          {s.name} ({s.code})
+                        </option>
+                      ))}
+                    </select>
+                    {sourceSite && (
+                      <small style={{ color: '#64748b', fontSize: '0.75rem', display: 'block', marginTop: '3px' }}>
+                        Source Site: <strong>{sourceSite}</strong> (excluded from destination choices)
+                      </small>
+                    )}
+                  </div>
+                );
+              })()}
 
               {activeModal === 'adjustment' && (
                 <div className="form-group">

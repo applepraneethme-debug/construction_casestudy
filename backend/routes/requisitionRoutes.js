@@ -58,7 +58,7 @@ router.post('/', requirePermission(PERMISSIONS.REQUISITIONS_CREATE), async (req,
     }
 
     // Site permission check
-    if (req.user.role !== 'Owner' && site !== 'General Site' && !(req.user.assignedSites || []).includes(site)) {
+    if (req.user.role !== 'Owner' && !(req.user.assignedSites || []).includes(site)) {
       return res.status(403).json({ message: `Forbidden: No access to create requisition for site '${site}'` });
     }
 
@@ -72,6 +72,12 @@ router.post('/', requirePermission(PERMISSIONS.REQUISITIONS_CREATE), async (req,
       const inv = await InventoryItem.findById(item.material);
       if (!inv) {
         return res.status(404).json({ message: `Material with ID ${item.material} not found.` });
+      }
+
+      if (inv.site && inv.site !== site.trim()) {
+        return res.status(400).json({
+          message: `Material '${inv.itemName}' belongs to site '${inv.site}', but requisition is for '${site.trim()}'. Cross-site requisitions are not permitted.`
+        });
       }
 
       parsedItems.push({
@@ -132,7 +138,7 @@ router.patch('/:id/approve', requirePermission(PERMISSIONS.REQUISITIONS_APPROVE)
     }
 
     // Site permission check
-    if (req.user.role !== 'Owner' && requisition.site !== 'General Site' && !(req.user.assignedSites || []).includes(requisition.site)) {
+    if (req.user.role !== 'Owner' && !(req.user.assignedSites || []).includes(requisition.site)) {
       return res.status(403).json({ message: `Forbidden: No access to approve requisitions for site '${requisition.site}'` });
     }
 
@@ -170,7 +176,7 @@ router.patch('/:id/reject', requirePermission(PERMISSIONS.REQUISITIONS_APPROVE),
     }
 
     // Site permission check
-    if (req.user.role !== 'Owner' && requisition.site !== 'General Site' && !(req.user.assignedSites || []).includes(requisition.site)) {
+    if (req.user.role !== 'Owner' && !(req.user.assignedSites || []).includes(requisition.site)) {
       return res.status(403).json({ message: `Forbidden: No access to reject requisitions for site '${requisition.site}'` });
     }
 
@@ -223,15 +229,21 @@ router.post('/:id/fulfill', requirePermission(PERMISSIONS.INVENTORY_ISSUE), asyn
     }
 
     // Site permission check
-    if (req.user.role !== 'Owner' && requisition.site !== 'General Site' && !(req.user.assignedSites || []).includes(requisition.site)) {
+    if (req.user.role !== 'Owner' && !(req.user.assignedSites || []).includes(requisition.site)) {
       await Requisition.findByIdAndUpdate(id, { status: 'Approved' });
       return res.status(403).json({ message: `Forbidden: No access to fulfill requisitions for site '${requisition.site}'` });
     }
 
-    // Pre-verify stock availability for all items before any deduction
+    // Pre-verify stock availability and site matching for all items before any deduction
     for (const item of requisition.items) {
       const inv = await InventoryItem.findById(item.material);
-      if (!inv || inv.quantity < item.quantityRequested) {
+      if (!inv || (inv.site && inv.site !== requisition.site)) {
+        await Requisition.findByIdAndUpdate(id, { status: 'Approved' });
+        return res.status(400).json({
+          message: `Cannot fulfill: Material '${item.materialName}' does not belong to site '${requisition.site}'.`
+        });
+      }
+      if (inv.quantity < item.quantityRequested) {
         await Requisition.findByIdAndUpdate(id, { status: 'Approved' });
         return res.status(400).json({
           message: `Cannot fulfill: Insufficient stock for ${item.materialName}. Available: ${inv ? inv.quantity : 0}, Required: ${item.quantityRequested}`
@@ -240,10 +252,9 @@ router.post('/:id/fulfill', requirePermission(PERMISSIONS.INVENTORY_ISSUE), asyn
     }
 
     const successfulDeductions = [];
-    const createdMovements = [];
 
     try {
-      // Atomically decrement stock and record stock movements
+      // Step 1: Atomically decrement stock for all items
       for (const item of requisition.items) {
         const updated = await InventoryItem.findOneAndUpdate(
           { _id: item.material, quantity: { $gte: item.quantityRequested } },
@@ -255,48 +266,70 @@ router.post('/:id/fulfill', requirePermission(PERMISSIONS.INVENTORY_ISSUE), asyn
           throw new Error(`Insufficient stock during atomic deduction for ${item.materialName}`);
         }
 
-        successfulDeductions.push({ materialId: item.material, quantity: item.quantityRequested });
-        item.quantityIssued = item.quantityRequested;
-
-        // Log movement to ledger with outbound direction and requisition linkage
-        const movement = new StockMovement({
-          material: updated._id,
-          materialName: updated.itemName,
-          site: updated.site || requisition.site,
-          project: requisition.project || null,
-          movementType: 'issue',
-          direction: 'outbound',
-          linkedRequisition: requisition._id,
+        successfulDeductions.push({
+          materialId: item.material,
           quantity: item.quantityRequested,
-          unit: item.unit,
-          unitCost: updated.unitCost,
-          totalValue: Number((item.quantityRequested * updated.unitCost).toFixed(2)),
-          reference: requisition.requisitionNumber,
-          reason: `Requisition Fulfillment for activity: ${requisition.activity}`,
-          recordedBy: req.user._id,
-          recordedByName: req.user.name,
-          recordedByRole: req.user.role,
-          status: 'completed'
+          updatedMaterial: updated,
+          item
         });
-        await movement.save();
-        createdMovements.push(movement._id);
       }
 
+      // Step 2: Deferred ledger creation - create and insert movements ONLY after all deductions succeeded
+      const movementsToCreate = successfulDeductions.map(({ updatedMaterial, quantity, item }) => ({
+        material: updatedMaterial._id,
+        materialName: updatedMaterial.itemName,
+        site: updatedMaterial.site || requisition.site,
+        project: requisition.project || null,
+        movementType: 'issue',
+        direction: 'outbound',
+        linkedRequisition: requisition._id,
+        quantity: quantity,
+        unit: item.unit,
+        unitCost: updatedMaterial.unitCost,
+        totalValue: Number((quantity * updatedMaterial.unitCost).toFixed(2)),
+        reference: requisition.requisitionNumber,
+        reason: `Requisition Fulfillment for activity: ${requisition.activity}`,
+        recordedBy: req.user._id,
+        recordedByName: req.user.name,
+        recordedByRole: req.user.role,
+        status: 'completed'
+      }));
+
+      // Step 2: Update item quantityIssued and mark requisition as Fulfilled
+      for (const item of requisition.items) {
+        item.quantityIssued = item.quantityRequested;
+      }
       requisition.status = 'Fulfilled';
       requisition.fulfilledDate = new Date();
       await requisition.save();
+
+      // Step 3: Deferred ledger creation - insert movements into StockMovement
+      try {
+        await StockMovement.insertMany(movementsToCreate);
+      } catch (ledgerErr) {
+        // Rollback requisition status and item quantityIssued if ledger insertion fails
+        await Requisition.findByIdAndUpdate(id, {
+          status: 'Approved',
+          fulfilledDate: null,
+          items: requisition.items.map((it) => ({
+            material: it.material,
+            materialName: it.materialName,
+            quantityRequested: it.quantityRequested,
+            quantityIssued: 0,
+            unit: it.unit
+          }))
+        });
+        throw new Error('Ledger insertion failed: ' + ledgerErr.message);
+      }
 
       res.status(200).json({
         message: `Requisition ${requisition.requisitionNumber} fulfilled successfully! Stock deducted and ledger updated.`,
         requisition
       });
     } catch (fulfillmentErr) {
-      // Rollback all successful deductions if any line item failed
+      // Rollback successful deductions if any deduction or ledger step failed
       for (const deduction of successfulDeductions) {
         await InventoryItem.findByIdAndUpdate(deduction.materialId, { $inc: { quantity: deduction.quantity } });
-      }
-      if (createdMovements.length > 0) {
-        await StockMovement.deleteMany({ _id: { $in: createdMovements } });
       }
       await Requisition.findByIdAndUpdate(id, { status: 'Approved' });
       return res.status(400).json({ message: 'Fulfillment failed and was rolled back: ' + fulfillmentErr.message });

@@ -143,7 +143,7 @@ const OverviewDashboard = ({ onNavigate }) => {
                         }}
                       >
                         <span>
-                          <strong>{item.itemName}</strong> &bull; {item.site}
+                          <strong>{item.itemName}</strong> • {item.site}
                         </span>
                         <span style={{ color: '#dc2626', fontWeight: 600 }}>
                           {item.quantity} / {item.minThreshold} {item.unit}
@@ -179,7 +179,7 @@ const OverviewDashboard = ({ onNavigate }) => {
                           </span>
                         </div>
                         <div style={{ color: '#64748b', fontSize: '0.78rem', marginTop: '2px' }}>
-                          Activity: {c.activity} {c.varianceReason ? `&bull; ${c.varianceReason}` : ''}
+                          Activity: {c.activity} {c.varianceReason ? `• ${c.varianceReason}` : ''}
                         </div>
                       </li>
                     ))}

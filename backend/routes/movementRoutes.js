@@ -68,8 +68,8 @@ router.post('/receipt', requirePermission(PERMISSIONS.INVENTORY_RECEIVE), async 
       return res.status(404).json({ message: 'Inventory item not found' });
     }
 
-    // Site access check
-    if (req.user.role !== 'Owner' && item.site !== 'General Site' && !(req.user.assignedSites || []).includes(item.site)) {
+    // Site access check (strictly enforce assigned sites without bypass)
+    if (req.user.role !== 'Owner' && !(req.user.assignedSites || []).includes(item.site)) {
       return res.status(403).json({ message: `Forbidden: No access to receive materials for site '${item.site}'` });
     }
 
@@ -150,8 +150,8 @@ router.post('/issue', requirePermission(PERMISSIONS.INVENTORY_ISSUE), async (req
       });
     }
 
-    // Site access check
-    if (req.user.role !== 'Owner' && updatedItem.site !== 'General Site' && !(req.user.assignedSites || []).includes(updatedItem.site)) {
+    // Site access check (strictly enforce assigned sites without bypass)
+    if (req.user.role !== 'Owner' && !(req.user.assignedSites || []).includes(updatedItem.site)) {
       // Revert decrement if unauthorized site
       await InventoryItem.findByIdAndUpdate(materialId, { $inc: { quantity: numQty } });
       return res.status(403).json({ message: `Forbidden: No access to issue materials from site '${updatedItem.site}'` });
@@ -210,7 +210,7 @@ router.post('/return', requirePermission(PERMISSIONS.INVENTORY_RETURN), async (r
       return res.status(404).json({ message: 'Inventory item not found' });
     }
 
-    if (req.user.role !== 'Owner' && item.site !== 'General Site' && !(req.user.assignedSites || []).includes(item.site)) {
+    if (req.user.role !== 'Owner' && !(req.user.assignedSites || []).includes(item.site)) {
       return res.status(403).json({ message: `Forbidden: No access to site '${item.site}'` });
     }
 
@@ -260,7 +260,32 @@ router.post('/transfer', requirePermission(PERMISSIONS.INVENTORY_ADJUST), async 
       return res.status(400).json({ message: 'Material ID, destination site, and positive quantity are required.' });
     }
 
+    if (!mongoose.Types.ObjectId.isValid(materialId)) {
+      return res.status(400).json({ message: 'Invalid material ID format' });
+    }
+
     const numQty = Number(quantity);
+    const trimmedDest = destinationSite.trim();
+
+    const existing = await InventoryItem.findById(materialId);
+    if (!existing) return res.status(404).json({ message: 'Source material not found' });
+
+    const sourceSite = existing.site || 'General Site';
+
+    if (sourceSite === trimmedDest) {
+      return res.status(400).json({ message: 'Source and destination sites must be different for a transfer.' });
+    }
+
+    // Verify non-owner has site access to both source and destination (strictly without bypass)
+    if (req.user.role !== 'Owner') {
+      const assigned = req.user.assignedSites || [];
+      if (!assigned.includes(sourceSite)) {
+        return res.status(403).json({ message: `Forbidden: No access to transfer from site '${sourceSite}'` });
+      }
+      if (!assigned.includes(trimmedDest)) {
+        return res.status(403).json({ message: `Forbidden: No access to transfer to site '${trimmedDest}'` });
+      }
+    }
 
     // Decrement from source
     const sourceItem = await InventoryItem.findOneAndUpdate(
@@ -270,24 +295,7 @@ router.post('/transfer', requirePermission(PERMISSIONS.INVENTORY_ADJUST), async 
     );
 
     if (!sourceItem) {
-      const existing = await InventoryItem.findById(materialId);
-      if (!existing) return res.status(404).json({ message: 'Source material not found' });
       return res.status(400).json({ message: `Insufficient stock for transfer. Current balance: ${existing.quantity}` });
-    }
-
-    const sourceSite = sourceItem.site || 'General Site';
-
-    // Verify non-owner has site access to both source and destination
-    if (req.user.role !== 'Owner') {
-      const assigned = req.user.assignedSites || [];
-      if (sourceSite !== 'General Site' && !assigned.includes(sourceSite)) {
-        await InventoryItem.findByIdAndUpdate(materialId, { $inc: { quantity: numQty } });
-        return res.status(403).json({ message: `Forbidden: No access to transfer from site '${sourceSite}'` });
-      }
-      if (!assigned.includes(destinationSite.trim())) {
-        await InventoryItem.findByIdAndUpdate(materialId, { $inc: { quantity: numQty } });
-        return res.status(403).json({ message: `Forbidden: No access to transfer to site '${destinationSite.trim()}'` });
-      }
     }
 
     // Find or create item at destination site
@@ -302,6 +310,7 @@ router.post('/transfer', requirePermission(PERMISSIONS.INVENTORY_ADJUST), async 
     } else {
       destItem = new InventoryItem({
         itemName: sourceItem.itemName,
+        sku: sourceItem.sku || undefined,
         category: sourceItem.category,
         quantity: numQty,
         unit: sourceItem.unit,
@@ -390,8 +399,17 @@ router.post('/adjustment', requirePermission(PERMISSIONS.INVENTORY_ADJUST), asyn
       return res.status(400).json({ message: 'Valid material ID and non-negative physical count are required.' });
     }
 
+    if (!mongoose.Types.ObjectId.isValid(materialId)) {
+      return res.status(400).json({ message: 'Invalid material ID format' });
+    }
+
     const item = await InventoryItem.findById(materialId);
     if (!item) return res.status(404).json({ message: 'Inventory item not found.' });
+
+    // Verify site authorization (strictly without bypass)
+    if (req.user.role !== 'Owner' && !(req.user.assignedSites || []).includes(item.site)) {
+      return res.status(403).json({ message: `Forbidden: No access to adjust stock for site '${item.site}'` });
+    }
 
     const targetQty = Number(newPhysicalQuantity);
     const variance = Number((targetQty - item.quantity).toFixed(4));

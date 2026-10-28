@@ -51,12 +51,16 @@ router.get('/', async (req, res) => {
  */
 router.post('/', requirePermission(PERMISSIONS.CONSUMPTION_RECORD), async (req, res) => {
   try {
-    const { project, site, activity, materialId, expectedQty, actualQty, varianceReason } = req.body;
+    const { project, activity, materialId, expectedQty, actualQty, varianceReason } = req.body;
 
-    if (!site || !activity || !materialId || expectedQty === undefined || actualQty === undefined) {
+    if (!activity || !materialId || expectedQty === undefined || actualQty === undefined) {
       return res.status(400).json({
-        message: 'Site, activity, material ID, expected quantity, and actual quantity consumed are required.'
+        message: 'Activity, material ID, expected quantity, and actual quantity consumed are required.'
       });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(materialId)) {
+      return res.status(400).json({ message: 'Invalid material ID format' });
     }
 
     const numExpected = Number(expectedQty);
@@ -66,26 +70,29 @@ router.post('/', requirePermission(PERMISSIONS.CONSUMPTION_RECORD), async (req, 
       return res.status(400).json({ message: 'Expected and actual quantities must be non-negative numbers.' });
     }
 
-    // Site permission check
-    if (req.user.role !== 'Owner' && site !== 'General Site' && !(req.user.assignedSites || []).includes(site)) {
-      return res.status(403).json({ message: `Forbidden: No access to record consumption for site '${site}'` });
-    }
-
     const material = await InventoryItem.findById(materialId);
     if (!material) {
       return res.status(404).json({ message: 'Material not found.' });
     }
 
+    const effectiveSite = material.site || (req.body.site ? req.body.site.trim() : 'General Site');
+
+    // Site permission check strictly against the material's site (no bypass)
+    if (req.user.role !== 'Owner' && !(req.user.assignedSites || []).includes(effectiveSite)) {
+      return res.status(403).json({ message: `Forbidden: No access to record consumption for site '${effectiveSite}'` });
+    }
+
     let projectName = '';
-    if (project && mongoose.Types.ObjectId.isValid(project)) {
-      const prj = await Project.findById(project);
+    const projId = project || material.project;
+    if (projId && mongoose.Types.ObjectId.isValid(projId)) {
+      const prj = await Project.findById(projId);
       if (prj) projectName = prj.name;
     }
 
     const record = new ConsumptionRecord({
-      project: project && mongoose.Types.ObjectId.isValid(project) ? project : null,
+      project: projId && mongoose.Types.ObjectId.isValid(projId) ? projId : null,
       projectName,
-      site: site.trim(),
+      site: effectiveSite,
       activity: activity.trim(),
       material: material._id,
       materialName: material.itemName,

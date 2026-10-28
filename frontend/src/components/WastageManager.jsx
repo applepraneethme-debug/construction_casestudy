@@ -13,7 +13,6 @@ const WastageManager = () => {
 
   // Consumption Form State
   const [consumptionForm, setConsumptionForm] = useState({
-    site: '',
     activity: '',
     materialId: '',
     expectedQty: '',
@@ -52,8 +51,7 @@ const WastageManager = () => {
           if (!consumptionForm.materialId) {
             setConsumptionForm((prev) => ({
               ...prev,
-              materialId: matData[0]._id,
-              site: user?.assignedSites?.length ? user.assignedSites[0] : matData[0].site
+              materialId: matData[0]._id
             }));
           }
           if (!wastageForm.materialId) {
@@ -79,12 +77,14 @@ const WastageManager = () => {
 
     try {
       const selectedMat = materials.find((m) => m._id === consumptionForm.materialId);
+      if (!selectedMat) {
+        throw new Error('Please select a material first.');
+      }
 
       const res = await authFetch('/api/consumption', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          site: consumptionForm.site || selectedMat?.site || 'General Site',
           activity: consumptionForm.activity,
           materialId: consumptionForm.materialId,
           expectedQty: Number(consumptionForm.expectedQty),
@@ -102,7 +102,6 @@ const WastageManager = () => {
       });
 
       setConsumptionForm({
-        site: user?.assignedSites?.length ? user.assignedSites[0] : 'General Site',
         activity: '',
         materialId: materials[0]?._id || '',
         expectedQty: '',
@@ -202,52 +201,55 @@ const WastageManager = () => {
       )}
 
       {/* SUB-TAB 1: PLANNED VS ACTUAL CONSUMPTION */}
-      {activeSubTab === 'consumption' && (
-        <div style={{ display: 'grid', gridTemplateColumns: canRecordConsumption ? '1fr 2.2fr' : '1fr', gap: '1.5rem' }}>
-          {/* Record Consumption Form */}
-          {canRecordConsumption && (
-            <div className="card">
-              <h3 className="card-title">📝 Track Activity Consumption</h3>
-              <form onSubmit={handleRecordConsumption}>
-                <div className="form-group">
-                  <label>Construction Activity</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="e.g. Ground Floor Slab Concreting"
-                    value={consumptionForm.activity}
-                    onChange={(e) => setConsumptionForm({ ...consumptionForm, activity: e.target.value })}
-                    required
-                  />
-                </div>
+      {activeSubTab === 'consumption' && (() => {
+        const selectedMat = materials.find((m) => m._id === consumptionForm.materialId);
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: canRecordConsumption ? '1fr 2.2fr' : '1fr', gap: '1.5rem' }}>
+            {/* Record Consumption Form */}
+            {canRecordConsumption && (
+              <div className="card">
+                <h3 className="card-title">📝 Track Activity Consumption</h3>
+                <form onSubmit={handleRecordConsumption}>
+                  <div className="form-group">
+                    <label>Material to Track</label>
+                    <select
+                      className="form-control"
+                      value={consumptionForm.materialId}
+                      onChange={(e) => setConsumptionForm({ ...consumptionForm, materialId: e.target.value })}
+                      required
+                    >
+                      <option value="">Select Material...</option>
+                      {materials.map((m) => (
+                        <option key={m._id} value={m._id}>
+                          {m.itemName} ({m.unit} @ {m.site || 'General Site'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div className="form-group">
-                  <label>Site</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="e.g. Site Central"
-                    value={consumptionForm.site}
-                    onChange={(e) => setConsumptionForm({ ...consumptionForm, site: e.target.value })}
-                    required
-                  />
-                </div>
+                  <div className="form-group">
+                    <label>Construction Site (Determined by Material)</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={selectedMat ? (selectedMat.site || 'General Site') : 'Select a material first'}
+                      disabled
+                      readOnly
+                      style={{ background: '#f8fafc', color: '#475569', fontWeight: 500 }}
+                    />
+                  </div>
 
-                <div className="form-group">
-                  <label>Material</label>
-                  <select
-                    className="form-control"
-                    value={consumptionForm.materialId}
-                    onChange={(e) => setConsumptionForm({ ...consumptionForm, materialId: e.target.value })}
-                    required
-                  >
-                    {materials.map((m) => (
-                      <option key={m._id} value={m._id}>
-                        {m.itemName} ({m.unit} @ {m.site})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  <div className="form-group">
+                    <label>Construction Activity</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Ground Floor Slab Concreting"
+                      value={consumptionForm.activity}
+                      onChange={(e) => setConsumptionForm({ ...consumptionForm, activity: e.target.value })}
+                      required
+                    />
+                  </div>
 
                 <div className="form-group" style={{ display: 'flex', gap: '1rem' }}>
                   <div style={{ flex: 1 }}>
@@ -361,7 +363,7 @@ const WastageManager = () => {
             )}
           </div>
         </div>
-      )}
+      ); })()}
 
       {/* SUB-TAB 2: PHYSICAL WASTAGE REGISTER */}
       {activeSubTab === 'physical_wastage' && (

@@ -124,15 +124,28 @@ router.post('/', requirePermission(PERMISSIONS.INVENTORY_CREATE), async (req, re
 
     const targetSite = site && site.trim() ? site.trim() : 'General Site';
 
-    // Verify site access for non-owner
+    // Verify site access for non-owner (strictly enforce assignedSites without bypass)
     if (
       req.user.role !== 'Owner' &&
-      targetSite !== 'General Site' &&
       !(req.user.assignedSites || []).includes(targetSite)
     ) {
       return res.status(403).json({
         message: `Forbidden: You do not have permission to add materials to site '${targetSite}'`
       });
+    }
+
+    const cleanSku = sku ? sku.trim().toUpperCase() : '';
+    if (cleanSku) {
+      const existingSkuItem = await InventoryItem.findOne({
+        sku: cleanSku,
+        site: targetSite,
+        isArchived: { $ne: true }
+      });
+      if (existingSkuItem) {
+        return res.status(400).json({
+          message: `Duplicate SKU: Material with SKU '${cleanSku}' already exists at site '${targetSite}' (${existingSkuItem.itemName}).`
+        });
+      }
     }
 
     const newItem = new InventoryItem({
@@ -144,7 +157,7 @@ router.post('/', requirePermission(PERMISSIONS.INVENTORY_CREATE), async (req, re
       site: targetSite,
       minThreshold: minThreshold !== undefined ? Math.max(0, Number(minThreshold)) : 10,
       unitCost: unitCost !== undefined ? Math.max(0, Number(unitCost)) : 0,
-      sku: sku ? sku.trim().toUpperCase() : '',
+      sku: cleanSku,
       project: project && mongoose.Types.ObjectId.isValid(project) ? project : null,
       storageLocation: storageLocation ? storageLocation.trim() : ''
     });
@@ -203,11 +216,10 @@ router.put('/:id', requirePermission(PERMISSIONS.INVENTORY_UPDATE), async (req, 
       return res.status(404).json({ message: 'Item not found!' });
     }
 
-    // Check site access to existing item
+    // Check site access to existing item (no bypass)
     if (
       req.user.role !== 'Owner' &&
       existingItem.site &&
-      existingItem.site !== 'General Site' &&
       !(req.user.assignedSites || []).includes(existingItem.site)
     ) {
       return res.status(403).json({
@@ -236,12 +248,11 @@ router.put('/:id', requirePermission(PERMISSIONS.INVENTORY_UPDATE), async (req, 
       });
     }
 
-
+    let targetSite = existingItem.site;
     if (site && site.trim()) {
-      const targetSite = site.trim();
+      targetSite = site.trim();
       if (
         req.user.role !== 'Owner' &&
-        targetSite !== 'General Site' &&
         !(req.user.assignedSites || []).includes(targetSite)
       ) {
         return res.status(403).json({
@@ -251,13 +262,30 @@ router.put('/:id', requirePermission(PERMISSIONS.INVENTORY_UPDATE), async (req, 
       existingItem.site = targetSite;
     }
 
+    if (sku !== undefined) {
+      const cleanSku = sku.trim().toUpperCase();
+      if (cleanSku) {
+        const existingSkuItem = await InventoryItem.findOne({
+          _id: { $ne: id },
+          sku: cleanSku,
+          site: targetSite,
+          isArchived: { $ne: true }
+        });
+        if (existingSkuItem) {
+          return res.status(400).json({
+            message: `Duplicate SKU: Material with SKU '${cleanSku}' already exists at site '${targetSite}' (${existingSkuItem.itemName}).`
+          });
+        }
+      }
+      existingItem.sku = cleanSku;
+    }
+
     if (itemName) existingItem.itemName = itemName.trim();
     if (category) existingItem.category = category;
     if (unit) existingItem.unit = unit.trim();
     if (supplier) existingItem.supplier = supplier.trim();
     if (minThreshold !== undefined) existingItem.minThreshold = Math.max(0, Number(minThreshold));
     if (unitCost !== undefined) existingItem.unitCost = Math.max(0, Number(unitCost));
-    if (sku !== undefined) existingItem.sku = sku.trim().toUpperCase();
     if (storageLocation !== undefined) existingItem.storageLocation = storageLocation.trim();
     if (project !== undefined) {
       existingItem.project = project && mongoose.Types.ObjectId.isValid(project) ? project : null;

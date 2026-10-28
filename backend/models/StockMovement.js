@@ -58,8 +58,7 @@ const stockMovementSchema = new mongoose.Schema(
     },
     direction: {
       type: String,
-      enum: ['inbound', 'outbound', 'neutral'],
-      default: 'inbound'
+      enum: ['inbound', 'outbound', 'neutral']
     },
     transferGroupId: {
       type: String,
@@ -118,6 +117,28 @@ const stockMovementSchema = new mongoose.Schema(
     timestamps: true
   }
 );
+
+// Automatically derive direction from movementType if not explicitly set
+stockMovementSchema.pre('validate', function (next) {
+  if (!this.direction) {
+    if (this.movementType === 'receipt' || this.movementType === 'return') {
+      this.direction = 'inbound';
+    } else if (this.movementType === 'issue' || this.movementType === 'wastage') {
+      this.direction = 'outbound';
+    } else if (this.movementType === 'transfer') {
+      if (this.sourceSite && this.site === this.sourceSite) {
+        this.direction = 'outbound';
+      } else if (this.destinationSite && this.site === this.destinationSite) {
+        this.direction = 'inbound';
+      } else {
+        this.direction = 'outbound';
+      }
+    } else {
+      this.direction = 'neutral';
+    }
+  }
+  next();
+});
 
 // Enforce ledger immutability: posted stock movements cannot be silently deleted or edited
 stockMovementSchema.pre('updateOne', function () {

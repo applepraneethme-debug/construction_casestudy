@@ -1,6 +1,7 @@
 const express = require('express');
 const { User, ROLES } = require('../models/User');
 const AuditLog = require('../models/AuditLog');
+const Site = require('../models/Site');
 const { authenticate, requirePermission, verifyCsrf } = require('../middleware/authMiddleware');
 const { PERMISSIONS } = require('../config/permissions');
 
@@ -54,6 +55,18 @@ router.post('/', async (req, res) => {
       return res.status(400).json({
         message: 'A user with this email address already exists.'
       });
+    }
+
+    // Validate assigned sites exist in the system
+    if (Array.isArray(assignedSites) && assignedSites.length > 0) {
+      const validSites = await Site.find({ name: { $in: assignedSites } }).select('name');
+      const validNames = validSites.map((s) => s.name);
+      const invalid = assignedSites.filter((s) => !validNames.includes(s));
+      if (invalid.length > 0) {
+        return res.status(400).json({
+          message: `The following assigned sites do not exist in the system: ${invalid.join(', ')}`
+        });
+      }
     }
 
     const passwordHash = await User.hashPassword(password);
@@ -126,6 +139,18 @@ router.put('/:id', async (req, res) => {
       return res.status(400).json({
         message: `Invalid role. Allowed roles: ${ROLES.join(', ')}`
       });
+    }
+
+    // Validate assigned sites exist in the system
+    if (Array.isArray(assignedSites) && assignedSites.length > 0) {
+      const validSites = await Site.find({ name: { $in: assignedSites } }).select('name');
+      const validNames = validSites.map((s) => s.name);
+      const invalid = assignedSites.filter((s) => !validNames.includes(s));
+      if (invalid.length > 0) {
+        return res.status(400).json({
+          message: `The following assigned sites do not exist in the system: ${invalid.join(', ')}`
+        });
+      }
     }
 
     // Apply allowed fields only (Mass Assignment Protection)

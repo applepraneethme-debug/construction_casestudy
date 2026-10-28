@@ -16,16 +16,41 @@ const InventoryForm = ({ onItemAdded, itemToEdit, onCancelEdit }) => {
     quantity: '',
     unit: 'pieces',
     supplier: '',
-    site: 'General Site',
+    site: '',
     storageLocation: '',
     minThreshold: '10',
     unitCost: '0'
   });
 
+  const [sites, setSites] = useState([]);
+  const [loadingSites, setLoadingSites] = useState(true);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [loading, setLoading] = useState(false);
 
-  // Sync form state when itemToEdit changes
+  // Fetch authorized sites
+  useEffect(() => {
+    let isMounted = true;
+    const fetchSites = async () => {
+      try {
+        setLoadingSites(true);
+        const res = await authFetch('/api/sites');
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted) {
+            setSites(data);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load sites:', err);
+      } finally {
+        if (isMounted) setLoadingSites(false);
+      }
+    };
+    fetchSites();
+    return () => { isMounted = false; };
+  }, [authFetch]);
+
+  // Sync form state when itemToEdit or sites change
   useEffect(() => {
     if (itemToEdit) {
       setFormData({
@@ -35,29 +60,32 @@ const InventoryForm = ({ onItemAdded, itemToEdit, onCancelEdit }) => {
         quantity: itemToEdit.quantity !== undefined ? itemToEdit.quantity.toString() : '',
         unit: itemToEdit.unit || 'pieces',
         supplier: itemToEdit.supplier || '',
-        site: itemToEdit.site || 'General Site',
+        site: itemToEdit.site || (sites[0]?.name || ''),
         storageLocation: itemToEdit.storageLocation || '',
         minThreshold: itemToEdit.minThreshold !== undefined ? itemToEdit.minThreshold.toString() : '10',
         unitCost: itemToEdit.unitCost !== undefined ? itemToEdit.unitCost.toString() : '0'
       });
       setMessage({ type: '', text: '' });
     } else {
-      // Default new item site based on user assignment
-      const defaultSite = user?.assignedSites?.length ? user.assignedSites[0] : 'General Site';
-      setFormData({
+      const userAssigned = user?.assignedSites || [];
+      const defaultSite = userAssigned.length > 0
+        ? (sites.find((s) => userAssigned.includes(s.name))?.name || userAssigned[0])
+        : (sites[0]?.name || '');
+
+      setFormData((prev) => ({
         itemName: '',
         sku: '',
         category: 'Material',
         quantity: '',
         unit: 'pieces',
         supplier: '',
-        site: defaultSite,
+        site: prev.site && sites.some((s) => s.name === prev.site) ? prev.site : defaultSite,
         storageLocation: '',
         minThreshold: '10',
         unitCost: '0'
-      });
+      }));
     }
-  }, [itemToEdit, user]);
+  }, [itemToEdit, user, sites]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -70,6 +98,10 @@ const InventoryForm = ({ onItemAdded, itemToEdit, onCancelEdit }) => {
     setMessage({ type: '', text: '' });
 
     try {
+      if (!formData.site || !formData.site.trim()) {
+        throw new Error('Please select an authorized construction site.');
+      }
+
       const isEdit = Boolean(itemToEdit);
       const url = isEdit ? `/api/inventory/${itemToEdit._id}` : '/api/inventory';
       const method = isEdit ? 'PUT' : 'POST';
@@ -94,6 +126,11 @@ const InventoryForm = ({ onItemAdded, itemToEdit, onCancelEdit }) => {
       setMessage({ type: 'success', text: '✅ ' + data.message });
 
       if (!isEdit) {
+        const userAssigned = user?.assignedSites || [];
+        const defaultSite = userAssigned.length > 0
+          ? (sites.find((s) => userAssigned.includes(s.name))?.name || userAssigned[0])
+          : (sites[0]?.name || '');
+
         setFormData({
           itemName: '',
           sku: '',
@@ -101,7 +138,7 @@ const InventoryForm = ({ onItemAdded, itemToEdit, onCancelEdit }) => {
           quantity: '',
           unit: 'pieces',
           supplier: '',
-          site: user?.assignedSites?.length ? user.assignedSites[0] : 'General Site',
+          site: defaultSite,
           storageLocation: '',
           minThreshold: '10',
           unitCost: '0'
@@ -124,9 +161,9 @@ const InventoryForm = ({ onItemAdded, itemToEdit, onCancelEdit }) => {
 
   return (
     <div className="card">
-      <h2 className="card-title">
+      <h3 className="card-title">
         {itemToEdit ? '✏️ Update Inventory Item' : '📦 Add Inventory Item'}
-      </h2>
+      </h3>
 
       {message.text && (
         <div className={`alert alert-${message.type}`}>
@@ -258,19 +295,36 @@ const InventoryForm = ({ onItemAdded, itemToEdit, onCancelEdit }) => {
           </div>
         </div>
 
+        {!loadingSites && sites.length === 0 && (
+          <div className="alert alert-error" style={{ marginBottom: '1rem', padding: '0.65rem 1rem', fontSize: '0.85rem' }}>
+            ⚠️ No authorized construction sites available. Please contact an Owner to register or assign a site before adding inventory.
+          </div>
+        )}
+
         <div className="form-group" style={{ display: 'flex', gap: '1rem' }}>
           <div style={{ flex: 1 }}>
-            <label htmlFor="site">Assigned Site</label>
-            <input
-              type="text"
+            <label htmlFor="site">Assigned Construction Site</label>
+            <select
               id="site"
               name="site"
               className="form-control"
-              placeholder="e.g. Site North, General Site"
               value={formData.site}
               onChange={handleChange}
               required
-            />
+              disabled={loadingSites || (!itemToEdit && sites.length === 0)}
+            >
+              <option value="">{loadingSites ? 'Loading authorized sites...' : '-- Select Construction Site --'}</option>
+              {sites.map((s) => (
+                <option key={s._id} value={s.name}>
+                  {s.name} ({s.code})
+                </option>
+              ))}
+              {itemToEdit && itemToEdit.site && !sites.some((s) => s.name === itemToEdit.site) && (
+                <option value={itemToEdit.site}>
+                  {itemToEdit.site} (Current)
+                </option>
+              )}
+            </select>
           </div>
           <div style={{ flex: 1 }}>
             <label htmlFor="storageLocation">Storage Bay / Shed</label>

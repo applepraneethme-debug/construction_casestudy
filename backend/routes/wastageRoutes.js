@@ -96,6 +96,7 @@ router.post('/', requirePermission(PERMISSIONS.WASTAGE_RECORD), async (req, res)
       site: updatedItem.site || 'General Site',
       project: updatedItem.project || null,
       movementType: 'wastage',
+      direction: 'outbound',
       quantity: numQty,
       unit: updatedItem.unit,
       unitCost: updatedItem.unitCost || 0,

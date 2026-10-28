@@ -11,6 +11,8 @@ const { app } = require('../server');
 const { User } = require('../models/User');
 const InventoryItem = require('../models/InventoryItem');
 const AuditLog = require('../models/AuditLog');
+const Site = require('../models/Site');
+const Project = require('../models/Project');
 
 describe('Phase 2 & Phase 3: Authentication and RBAC Verification Suite', () => {
   let mongoServer;
@@ -23,6 +25,11 @@ describe('Phase 2 & Phase 3: Authentication and RBAC Verification Suite', () => 
   before(async () => {
     mongoServer = await MongoMemoryServer.create();
     await mongoose.connect(mongoServer.getUri());
+
+    // 0. Seed Project & Sites
+    const testProject = await Project.create({ name: 'Alpha Project', code: 'PRJ-ALP' });
+    await Site.create({ name: 'Site Alpha', code: 'STA', project: testProject._id });
+    await Site.create({ name: 'Site Beta', code: 'STB', project: testProject._id });
 
     // 1. Seed Owner
     const ownerHash = await User.hashPassword('OwnerPass123!');
@@ -79,14 +86,14 @@ describe('Phase 2 & Phase 3: Authentication and RBAC Verification Suite', () => 
       isActive: false
     });
 
-    // 6. Seed Legacy Inventory Item (no site specified, defaults to General Site)
+    // 6. Seed Sample Inventory Item at Site Alpha (assigned to Material Manager)
     const legacyItem = await InventoryItem.create({
       itemName: 'Portland Cement',
       category: 'Material',
       quantity: 50,
       unit: 'bags',
       supplier: 'UltraTech Supplies',
-      site: 'General Site'
+      site: 'Site Alpha'
     });
     sampleItemId = legacyItem._id.toString();
 

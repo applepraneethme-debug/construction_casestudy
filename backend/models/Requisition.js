@@ -64,7 +64,7 @@ const requisitionSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['Pending', 'Approved', 'Rejected', 'Fulfilled'],
+      enum: ['Pending', 'Approved', 'Processing', 'Rejected', 'Fulfilled'],
       default: 'Pending'
     },
     requestedBy: {

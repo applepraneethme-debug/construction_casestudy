@@ -5,6 +5,7 @@ const RequisitionManager = () => {
   const { authFetch, user } = useAuth();
   const [requisitions, setRequisitions] = useState([]);
   const [materials, setMaterials] = useState([]);
+  const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState({ type: '', text: '' });
 
@@ -32,23 +33,32 @@ const RequisitionManager = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [reqRes, matRes] = await Promise.all([
+      const [reqRes, matRes, steRes] = await Promise.all([
         authFetch('/api/requisitions'),
-        authFetch('/api/inventory')
+        authFetch('/api/inventory'),
+        authFetch('/api/sites')
       ]);
 
       if (reqRes.ok) {
         const reqData = await reqRes.json();
         setRequisitions(reqData);
       }
+      let loadedSites = [];
+      if (steRes.ok) {
+        loadedSites = await steRes.json();
+        setSites(loadedSites);
+      }
       if (matRes.ok) {
         const matData = await matRes.json();
         setMaterials(matData);
         if (matData.length > 0 && !formData.materialId) {
+          const userSite = user?.assignedSites?.find((as) => loadedSites.some((s) => s.name === as));
+          const initialSite = userSite || loadedSites[0]?.name || matData[0]?.site || '';
+          const siteMaterials = matData.filter((m) => !m.site || m.site === initialSite);
           setFormData((prev) => ({
             ...prev,
-            materialId: matData[0]._id,
-            site: user?.assignedSites?.length ? user.assignedSites[0] : matData[0].site
+            site: initialSite,
+            materialId: siteMaterials[0]?._id || matData[0]._id
           }));
         }
       }
@@ -69,13 +79,24 @@ const RequisitionManager = () => {
     setMessage({ type: '', text: '' });
 
     try {
+      if (!formData.site || !formData.site.trim()) {
+        throw new Error('Please select an authorized construction site.');
+      }
+
       const selectedMat = materials.find((m) => m._id === formData.materialId);
+      if (!selectedMat) {
+        throw new Error('Please select a material.');
+      }
+
+      if (selectedMat.site && selectedMat.site !== formData.site.trim()) {
+        throw new Error(`Selected material '${selectedMat.itemName}' is at '${selectedMat.site}', not '${formData.site}'.`);
+      }
 
       const res = await authFetch('/api/requisitions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          site: formData.site || selectedMat?.site || 'General Site',
+          site: formData.site.trim(),
           activity: formData.activity,
           priority: formData.priority,
           items: [
@@ -93,11 +114,14 @@ const RequisitionManager = () => {
 
       setMessage({ type: 'success', text: `✅ ${data.message}` });
       setShowCreateModal(false);
+      const userSite = user?.assignedSites?.find((as) => sites.some((s) => s.name === as));
+      const nextSite = userSite || sites[0]?.name || '';
+      const nextMats = materials.filter((m) => !m.site || m.site === nextSite);
       setFormData({
-        site: user?.assignedSites?.length ? user.assignedSites[0] : 'General Site',
+        site: nextSite,
         activity: '',
         priority: 'Medium',
-        materialId: materials[0]?._id || '',
+        materialId: nextMats[0]?._id || materials[0]?._id || '',
         quantityRequested: '',
         notes: ''
       });
@@ -360,15 +384,28 @@ const RequisitionManager = () => {
 
               <div className="form-group" style={{ display: 'flex', gap: '1rem' }}>
                 <div style={{ flex: 1 }}>
-                  <label>Site</label>
-                  <input
-                    type="text"
+                  <label>Construction Site</label>
+                  <select
                     className="form-control"
-                    placeholder="e.g. Site Central"
                     value={formData.site}
-                    onChange={(e) => setFormData({ ...formData, site: e.target.value })}
+                    onChange={(e) => {
+                      const newSite = e.target.value;
+                      const siteMats = materials.filter((m) => !m.site || m.site === newSite);
+                      setFormData((prev) => ({
+                        ...prev,
+                        site: newSite,
+                        materialId: siteMats[0]?._id || ''
+                      }));
+                    }}
                     required
-                  />
+                  >
+                    <option value="">-- Select Construction Site --</option>
+                    {sites.map((s) => (
+                      <option key={s._id} value={s.name}>
+                        {s.name} ({s.code})
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div style={{ flex: 1 }}>
                   <label>Priority</label>
@@ -387,18 +424,21 @@ const RequisitionManager = () => {
 
               <div className="form-group" style={{ display: 'flex', gap: '1rem' }}>
                 <div style={{ flex: 2 }}>
-                  <label>Material</label>
+                  <label>Material (Filtered by Site)</label>
                   <select
                     className="form-control"
                     value={formData.materialId}
                     onChange={(e) => setFormData({ ...formData, materialId: e.target.value })}
                     required
                   >
-                    {materials.map((m) => (
-                      <option key={m._id} value={m._id}>
-                        {m.itemName} (Stock: {m.quantity} {m.unit} @ {m.site})
-                      </option>
-                    ))}
+                    <option value="">-- Select Material --</option>
+                    {materials
+                      .filter((m) => !formData.site || !m.site || m.site === formData.site)
+                      .map((m) => (
+                        <option key={m._id} value={m._id}>
+                          {m.itemName} (Stock: {m.quantity} {m.unit} @ {m.site || 'General Site'})
+                        </option>
+                      ))}
                   </select>
                 </div>
                 <div style={{ flex: 1 }}>

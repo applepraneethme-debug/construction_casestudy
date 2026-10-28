@@ -71,6 +71,18 @@ const inventoryItemSchema = new mongoose.Schema(
 );
 
 
+// Enforce SKU uniqueness per site for non-empty SKUs among active items
+inventoryItemSchema.index(
+  { sku: 1, site: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      sku: { $type: 'string', $gt: '' },
+      isArchived: false
+    }
+  }
+);
+
 // STEP 2: Create and export the Model from Schema
 // The model provides methods like find(), save(), findByIdAndDelete(), etc.
 module.exports = mongoose.model('InventoryItem', inventoryItemSchema);

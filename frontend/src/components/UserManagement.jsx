@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 const UserManagement = () => {
   const { authFetch, user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
+  const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState({ type: '', text: '' });
 
@@ -13,7 +14,7 @@ const UserManagement = () => {
     email: '',
     password: '',
     role: 'Material Manager',
-    assignedSites: ''
+    assignedSites: []
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -22,20 +23,26 @@ const UserManagement = () => {
   const [editForm, setEditForm] = useState({
     name: '',
     role: 'Material Manager',
-    assignedSites: ''
+    assignedSites: []
   });
 
-  // Fetch all users
-  const fetchUsers = async () => {
+  // Fetch all users and sites
+  const fetchUsersAndSites = async () => {
     try {
       setLoading(true);
-      const res = await authFetch('/api/users');
-      if (!res.ok) {
-        const data = await res.json();
+      const [uRes, sRes] = await Promise.all([
+        authFetch('/api/users'),
+        authFetch('/api/sites')
+      ]);
+
+      if (!uRes.ok) {
+        const data = await uRes.json();
         throw new Error(data.message || 'Failed to fetch users');
       }
-      const data = await res.json();
-      setUsers(data);
+      setUsers(await uRes.json());
+      if (sRes.ok) {
+        setSites(await sRes.json());
+      }
     } catch (err) {
       setMessage({ type: 'error', text: err.message });
     } finally {
@@ -44,7 +51,7 @@ const UserManagement = () => {
   };
 
   useEffect(() => {
-    fetchUsers();
+    fetchUsersAndSites();
   }, []);
 
   const handleChange = (e) => {
@@ -58,11 +65,6 @@ const UserManagement = () => {
     setMessage({ type: '', text: '' });
 
     try {
-      const sitesArray = formData.assignedSites
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-
       const res = await authFetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -71,7 +73,7 @@ const UserManagement = () => {
           email: formData.email,
           password: formData.password,
           role: formData.role,
-          assignedSites: sitesArray
+          assignedSites: formData.assignedSites
         })
       });
 
@@ -86,9 +88,9 @@ const UserManagement = () => {
         email: '',
         password: '',
         role: 'Material Manager',
-        assignedSites: ''
+        assignedSites: []
       });
-      fetchUsers();
+      fetchUsersAndSites();
     } catch (err) {
       setMessage({ type: 'error', text: '❌ ' + err.message });
     } finally {
@@ -101,25 +103,20 @@ const UserManagement = () => {
     setEditForm({
       name: user.name,
       role: user.role,
-      assignedSites: (user.assignedSites || []).join(', ')
+      assignedSites: user.assignedSites || []
     });
   };
 
   const handleSaveEdit = async (e) => {
     e.preventDefault();
     try {
-      const sitesArray = editForm.assignedSites
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-
       const res = await authFetch(`/api/users/${editingUser._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: editForm.name,
           role: editForm.role,
-          assignedSites: sitesArray
+          assignedSites: editForm.assignedSites
         })
       });
 
@@ -128,7 +125,7 @@ const UserManagement = () => {
 
       setMessage({ type: 'success', text: `✅ User '${data.user.name}' updated successfully!` });
       setEditingUser(null);
-      fetchUsers();
+      fetchUsersAndSites();
     } catch (err) {
       setMessage({ type: 'error', text: '❌ ' + err.message });
     }
@@ -238,18 +235,37 @@ const UserManagement = () => {
             </div>
 
             <div className="form-group">
-              <label htmlFor="user-sites">Assigned Sites (comma-separated)</label>
-              <input
-                type="text"
-                id="user-sites"
-                name="assignedSites"
-                className="form-control"
-                placeholder="e.g. Site North, Site South"
-                value={formData.assignedSites}
-                onChange={handleChange}
-              />
-              <small style={{ color: '#64748b', fontSize: '0.75rem' }}>
-                Non-owners can only view and manage inventory for their assigned sites.
+              <label>Assigned Construction Sites</label>
+              {formData.role === 'Owner' ? (
+                <div style={{ fontSize: '0.82rem', color: '#059669', background: '#ecfdf5', padding: '0.5rem', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
+                  🌐 Owners have full global access to all current and future sites.
+                </div>
+              ) : sites.length === 0 ? (
+                <div style={{ fontSize: '0.82rem', color: '#64748b', fontStyle: 'italic' }}>
+                  No construction sites registered yet. Create sites in Projects & Sites first.
+                </div>
+              ) : (
+                <div style={{ maxHeight: '130px', overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.5rem', background: '#fff' }}>
+                  {sites.map((s) => (
+                    <label key={s._id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={formData.assignedSites.includes(s.name)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setFormData({ ...formData, assignedSites: [...formData.assignedSites, s.name] });
+                          } else {
+                            setFormData({ ...formData, assignedSites: formData.assignedSites.filter((name) => name !== s.name) });
+                          }
+                        }}
+                      />
+                      <span>{s.name} ({s.code})</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <small style={{ color: '#64748b', fontSize: '0.75rem', display: 'block', marginTop: '3px' }}>
+                Select all construction sites this employee is authorized to access.
               </small>
             </div>
 
@@ -389,15 +405,36 @@ const UserManagement = () => {
               </div>
 
               <div className="form-group">
-                <label>Assigned Sites (comma-separated)</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="e.g. Site North, Site South"
-                  value={editForm.assignedSites}
-                  onChange={(e) => setEditForm({ ...editForm, assignedSites: e.target.value })}
-                />
-                <small style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                <label>Assigned Construction Sites</label>
+                {editForm.role === 'Owner' ? (
+                  <div style={{ fontSize: '0.82rem', color: '#059669', background: '#ecfdf5', padding: '0.5rem', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
+                    🌐 Owners have full global access to all current and future sites.
+                  </div>
+                ) : sites.length === 0 ? (
+                  <div style={{ fontSize: '0.82rem', color: '#64748b', fontStyle: 'italic' }}>
+                    No construction sites registered yet.
+                  </div>
+                ) : (
+                  <div style={{ maxHeight: '130px', overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.5rem', background: '#fff' }}>
+                    {sites.map((s) => (
+                      <label key={s._id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={editForm.assignedSites.includes(s.name)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setEditForm({ ...editForm, assignedSites: [...editForm.assignedSites, s.name] });
+                            } else {
+                              setEditForm({ ...editForm, assignedSites: editForm.assignedSites.filter((name) => name !== s.name) });
+                            }
+                          }}
+                        />
+                        <span>{s.name} ({s.code})</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <small style={{ color: '#64748b', fontSize: '0.75rem', display: 'block', marginTop: '3px' }}>
                   Restricts non-owners to view, receive, and issue materials only at these sites.
                 </small>
               </div>
